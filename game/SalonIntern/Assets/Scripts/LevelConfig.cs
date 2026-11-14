@@ -38,6 +38,8 @@ namespace SalonIntern
         // 다음 레벨까지 필요한 XP (임시 공식)
         public static int XpToNext(int level)
         {
+            // Lv.0은 견학 4종(각 XP +2)만 해도 바로 Lv.1이 되도록 8로 낮춤
+            if (level == 0) return 8;
             return 10 + 5 * level;
         }
     }
