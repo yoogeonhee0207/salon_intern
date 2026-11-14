@@ -148,6 +148,8 @@ namespace SalonIntern
             faucetGlow.color = action && s != 2 ? new Color(0.55f, 0.85f, 1f) : new Color(0.78f, 0.88f, 0.95f, 0.6f);
             bottleGlow.color = action && s == 2 ? new Color(1f, 0.70f, 0.90f) : new Color(0.95f, 0.88f, 0.95f, 0.6f);
             feedbackText.text = StageTips[s];
+            // 문지르는 단계: 적시기·헹구기는 샤워기 호스, 거품내기는 거품. 준비 단계는 원래 커서
+            SetCursor(action ? CursorKind.None : (s == 3 ? CursorKind.Foam : CursorKind.Shower));
             UpdateInfo();
         }
 

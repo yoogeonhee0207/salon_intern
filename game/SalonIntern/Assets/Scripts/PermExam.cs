@@ -80,6 +80,7 @@ namespace SalonIntern
             Place(box, Vector2.zero, new Vector2(1400f, 440f));
             active = -1;
             feedbackText.text = StageTips[s];
+            SetCursor(CursorKind.Comb);
 
             Box(box, new Vector2(0f, TopY + 28f), new Vector2(1300f, 30f), new Color(0.96f, 0.80f, 0.68f)); // 두피
             if (s == 0) BuildComb();

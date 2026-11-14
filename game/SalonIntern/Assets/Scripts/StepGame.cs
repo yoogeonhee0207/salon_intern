@@ -56,6 +56,7 @@ namespace SalonIntern
             scrubMode = Step == 0 || Step == 2 || Step == 3 || Step == 5;
             pad = MakePad(new Vector2(1400f, 440f), new Vector2(0f, 30f), new Color(0.95f, 0.90f, 0.82f));
             if (scrubMode) SetupScrub(); else SetupTrace();
+            SetCursor(Step == 3 ? CursorKind.Dryer : (Step == 4 ? CursorKind.Scissors : CursorKind.Brush));
             UpdateInfo();
         }
 

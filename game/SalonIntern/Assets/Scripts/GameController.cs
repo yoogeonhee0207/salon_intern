@@ -7,7 +7,7 @@ namespace SalonIntern
 {
     // 하루 구조(아침 -> 영업 -> 마감 정산)와 요청 카드 시스템 프로토타입.
     // 씬에 아무것도 놓지 않아도 Play를 누르면 이 스크립트가 자동으로 실행된다.
-    public class GameController : MonoBehaviour
+    public partial class GameController : MonoBehaviour
     {
         enum Phase { Morning, Business, Evening }
 
@@ -22,6 +22,7 @@ namespace SalonIntern
             public int procIdx = -1; // 시술 번호 (0 샴푸 ~ 3 드라이)
             public int[] route;      // 시술 단계 순서 (예: 펌 = 샴푸, 커트, 펌, 샴푸, 드라이)
             public int routeIdx;     // 지금 진행 중인 단계 번호
+            public string customerName; public int customerType; public string customerLine; public bool isInspector;
             public bool started;     // 손님을 모시고 출발했는지
             public int satSum;       // 단계별 완성도(0~100) 합: 손님 만족도 계산용
             public int satCount;
@@ -101,6 +102,11 @@ namespace SalonIntern
         Vector2Int resVip;
         Button morningStartButton;
         Text morningNote;
+        Text resetButtonText;
+        Text shopButtonText;
+        RectTransform shopPanel;
+        Text saveText;          // 저장할 때 우측 상단에 잠깐 뜨는 안내
+        float saveTimer;
         Text morningStartText;
         readonly List<Booking> waitingBookings = new List<Booking>();
         int nextSlot;
@@ -120,6 +126,10 @@ namespace SalonIntern
 
         int level;
         int xp;
+        int points; // 상점에서 쓰는 포인트 (하루 마감 보상)
+        string playerName = "막내";
+        int gender;        // 0 여성, 1 남성, 2 밝히지 않음
+        string salonName = "해피헤어 번화가점";
         int score;
         int done;
         int missed;
@@ -150,13 +160,15 @@ namespace SalonIntern
                 RefreshTop();
                 return;
             }
-            StartMorning();
+            ShowTitle();
         }
 
         void Update()
         {
             if (designers == null || designers.Length == 0) return;
             UpdateToast();
+            UpdateSaveText();
+            FlushAchieveToast();
             if (phase != Phase.Business) return;
             if (minigameActive) return;
 
@@ -273,11 +285,16 @@ namespace SalonIntern
             businessElapsed = 0f;
             lastClockMinute = -1;
 
-            morningTitle.text = "Day " + day + "   아침 준비";
+            resetArmed = false;
+            if (resetButtonText != null) resetButtonText.text = "처음부터 다시";
+            SaveGame();
+            if (shopButtonText != null) shopButtonText.text = "상점 (" + points + "P)";
+            morningTitle.text = salonName + "   Day " + day + "   아침 준비";
             if (morningNote != null)
                 morningNote.text = TourDay
                     ? "※ 첫날은 견학! 모든 시술을 한 번씩 보고 배워요.\n(예약 손님 없이 시술마다 견학 요청이 와요)"
                     : "※ 오늘 같이 일할 선생님을 최대 3명 골라요.\n고른 선생님의 예약 손님만 와요. (VIP는 보너스)";
+            OnMorningStart();
             UpdateMorningTexts();
             BuildReservationGrid();
 
@@ -361,7 +378,11 @@ namespace SalonIntern
                 AddXp(2);
                 rewardLine += "보상  XP +2 (S등급 보너스)\n";
             }
-            if (rewardLine.Length == 0) rewardLine = "보상  없음 (B등급 이상이면 받아요)\n";
+            int pointGain = grade == "S" ? 30 : (grade == "A" ? 20 : (grade == "B" ? 10 : 3));
+            AddPoints(pointGain);
+            rewardLine += "보상  포인트 +" + pointGain + " (상점에서 도구를 꾸며요)\n";
+            rewardLine += OnDayEnd(grade, dayScore, target, dayMissed);
+            achieveQueue.Clear();
 
             string levelLine = level > dayStartLevel
                 ? "레벨 업!  Lv." + dayStartLevel + " → Lv." + level + " " + LevelConfig.Names[level]
@@ -374,7 +395,7 @@ namespace SalonIntern
                 + "완료 " + dayDone + "건     놓침 " + dayMissed + "건\n\n"
                 + rewardLine + "\n"
                 + levelLine + "     XP " + XpLabel() + "\n\n"
-                + DayConfig.Comment(grade)
+                + DayConfig.Comment(grade) + DirectorLine(grade)
                 + (CanTakeExamIgnoringDay() ? "\n\n승급시험을 볼 수 있어요! 내일 아침에 도전해 보세요." : "");
 
             eveningPanel.gameObject.SetActive(true);
@@ -382,10 +403,373 @@ namespace SalonIntern
             RefreshTop();
         }
 
+        // ---------- 저장과 불러오기 ----------
+
+        // 아침이 시작될 때와 승급시험이 끝날 때 저장한다. 영업 도중에 끝내면 그날 아침부터 다시 시작한다.
+        void SaveGame()
+        {
+            var d = new SaveData
+            {
+                day = day,
+                level = level,
+                xp = xp,
+                score = score,
+                done = done,
+                missed = missed,
+                practice = (int[])practice.Clone(),
+                tourSeen = (bool[])tourSeen.Clone(),
+                introShown = introShown,
+                lastExamDay = lastExamDay,
+                graduated = graduated,
+                points = points,
+                playerName = playerName,
+                gender = gender,
+                salonName = salonName,
+                ownedSkins = (bool[])CursorSkins.Owned.Clone(),
+                equippedSkins = (int[])CursorSkins.Equipped.Clone(),
+            };
+            var ids = new List<int>();
+            var vals = new List<float>();
+            foreach (KeyValuePair<int, float> kv in closeness) { ids.Add(kv.Key); vals.Add(kv.Value); }
+            d.closenessIds = ids.ToArray();
+            d.closenessValues = vals.ToArray();
+            FillExtraSave(d);
+            d.Save();
+            if (saveText != null)
+            {
+                saveText.text = "저장 중...";
+                saveText.transform.SetAsLastSibling();
+                saveText.gameObject.SetActive(true);
+                saveTimer = 1.6f;
+            }
+        }
+
+        void ApplySave(SaveData d)
+        {
+            if (d == null) return;
+            day = Mathf.Max(1, d.day);
+            level = Mathf.Clamp(d.level, 0, LevelConfig.MaxLevel);
+            xp = Mathf.Max(0, d.xp);
+            score = d.score;
+            done = d.done;
+            missed = d.missed;
+            if (d.practice != null) for (int i = 0; i < practice.Length && i < d.practice.Length; i++) practice[i] = d.practice[i];
+            if (d.tourSeen != null) for (int i = 0; i < tourSeen.Length && i < d.tourSeen.Length; i++) tourSeen[i] = d.tourSeen[i];
+            introShown = d.introShown;
+            lastExamDay = d.lastExamDay;
+            graduated = d.graduated;
+            points = Mathf.Max(0, d.points);
+            if (!string.IsNullOrEmpty(d.playerName)) playerName = d.playerName;
+            gender = Mathf.Clamp(d.gender, 0, 2);
+            if (!string.IsNullOrEmpty(d.salonName)) salonName = d.salonName;
+            CursorSkins.Reset();
+            if (d.ownedSkins != null)
+                for (int i = 0; i < d.ownedSkins.Length && i < CursorSkins.Owned.Length; i++) CursorSkins.Owned[i] = d.ownedSkins[i] || i % CursorSkins.SkinCount == 0;
+            if (d.equippedSkins != null)
+                for (int i = 0; i < CursorSkins.ToolCount && i < d.equippedSkins.Length; i++)
+                    if (d.equippedSkins[i] >= 0 && d.equippedSkins[i] < CursorSkins.SkinCount && CursorSkins.IsOwned(i, d.equippedSkins[i])) CursorSkins.Equipped[i] = d.equippedSkins[i];
+            closeness.Clear();
+            ApplyExtraSave(d);
+            if (d.closenessIds != null && d.closenessValues != null)
+                for (int i = 0; i < d.closenessIds.Length && i < d.closenessValues.Length; i++) closeness[d.closenessIds[i]] = d.closenessValues[i];
+        }
+
+        void UpdateSaveText()
+        {
+            if (saveText == null || saveTimer <= 0f) return;
+            saveTimer -= Time.unscaledDeltaTime;
+            if (saveTimer <= 0f)
+            {
+                saveText.gameObject.SetActive(false);
+                return;
+            }
+            if (saveTimer < 1.0f) saveText.text = "저장됨 ✔";
+        }
+
+        // ---------- 상점: 포인트로 도구 모양 꾸미기 ----------
+
+        void OpenShop()
+        {
+            if (shopPanel != null) Destroy(shopPanel.gameObject);
+
+            Image bg = UiFactory.Panel("ShopPanel", canvasRoot, new Color(0.96f, 0.93f, 0.88f));
+            UiFactory.Stretch(bg.rectTransform, 0.04f, 0.04f, 0.96f, 0.96f);
+            shopPanel = bg.rectTransform;
+
+            Text title = UiFactory.Label("ShopTitle", shopPanel, "상점  -  도구 꾸미기      보유 포인트 " + points + "P", 40, TextDark, TextAnchor.MiddleCenter);
+            UiFactory.Stretch(title.rectTransform, 0f, 0.88f, 1f, 0.99f);
+
+            for (int t = 0; t < CursorSkins.ToolCount; t++)
+            {
+                float yMax = 0.87f - t * 0.088f;
+                float yMin = yMax - 0.080f;
+                Text name = UiFactory.Label("ToolName", shopPanel, CursorSkins.ToolNames[t], 30, TextDark, TextAnchor.MiddleCenter);
+                UiFactory.Stretch(name.rectTransform, 0.01f, yMin, 0.16f, yMax);
+
+                for (int k = 0; k < CursorSkins.SkinCount; k++)
+                {
+                    int tool = t, skin = k;
+                    bool owned = CursorSkins.IsOwned(t, k);
+                    bool equipped = CursorSkins.Equipped[t] == k;
+                    string state = equipped ? "장착 중" : (owned ? "장착하기" : CursorSkins.Cost[k] + "P 구매");
+                    Color baseColor = CursorSkins.MainColor(t, k);
+                    Button b = UiFactory.MakeButton("Skin", shopPanel, CursorSkins.SkinNames[t][k] + "\n" + state, 22,
+                        equipped ? new Color(0.30f, 0.60f, 0.45f) : (owned ? new Color(0.45f, 0.50f, 0.60f) : new Color(0.55f, 0.45f, 0.40f)),
+                        () => OnShopSkin(tool, skin));
+                    float x0 = 0.17f + k * 0.205f;
+                    UiFactory.Stretch(b.GetComponent<RectTransform>(), x0, yMin, x0 + 0.195f, yMax);
+
+                    // 모양 미리보기: 대표색 동그라미
+                    Image swatch = UiFactory.Circle("Swatch", b.transform, baseColor);
+                    swatch.raycastTarget = false;
+                    UiFactory.Stretch(swatch.rectTransform, 0.02f, 0.2f, 0.16f, 0.8f);
+                }
+            }
+
+            BuildSnackRow(shopPanel, 0.87f - CursorSkins.ToolCount * 0.088f - 0.080f, 0.87f - CursorSkins.ToolCount * 0.088f);
+
+            Button close = UiFactory.MakeButton("ShopClose", shopPanel, "닫기", 32, new Color(0.30f, 0.60f, 0.45f), CloseShop);
+            UiFactory.Stretch(close.GetComponent<RectTransform>(), 0.38f, 0.01f, 0.62f, 0.07f);
+        }
+
+        void CloseShop()
+        {
+            if (shopPanel != null) Destroy(shopPanel.gameObject);
+            shopPanel = null;
+            ApplyLook();
+            if (shopButtonText != null) shopButtonText.text = "상점 (" + points + "P)";
+            SaveGame();
+        }
+
+        void OnShopSkin(int tool, int skin)
+        {
+            if (!CursorSkins.IsOwned(tool, skin))
+            {
+                int cost = CursorSkins.Cost[skin];
+                if (points < cost)
+                {
+                    Say("포인트가 부족해요. (" + cost + "P 필요)");
+                    return;
+                }
+                points -= cost;
+                CursorSkins.Owned[tool * CursorSkins.SkinCount + skin] = true;
+            }
+            CursorSkins.Equipped[tool] = skin;
+            ApplyLook();
+            OpenShop(); // 화면 새로고침
+        }
+
+        // ---------- 시작 화면 ----------
+
+        RectTransform titlePanel;
+        Text titleNewText;
+        bool newArmed;
+
+        void ShowTitle()
+        {
+            if (titlePanel != null) Destroy(titlePanel.gameObject);
+            newArmed = false;
+            SaveData save = SaveData.Load();
+
+            Image bg = UiFactory.Panel("TitlePanel", canvasRoot, new Color(0.14f, 0.16f, 0.26f));
+            UiFactory.Stretch(bg.rectTransform, 0f, 0f, 1f, 1f);
+            titlePanel = bg.rectTransform;
+            titlePanel.SetAsLastSibling();
+
+            // 가위 장식 (도형으로 그린 모양)
+            Image bladeL = UiFactory.Panel("BladeL", titlePanel, new Color(0.85f, 0.87f, 0.92f));
+            UiFactory.Stretch(bladeL.rectTransform, 0.488f, 0.52f, 0.497f, 0.85f);
+            bladeL.rectTransform.localRotation = Quaternion.Euler(0f, 0f, -14f);
+            Image bladeR = UiFactory.Panel("BladeR", titlePanel, new Color(0.95f, 0.96f, 1f));
+            UiFactory.Stretch(bladeR.rectTransform, 0.503f, 0.52f, 0.512f, 0.85f);
+            bladeR.rectTransform.localRotation = Quaternion.Euler(0f, 0f, 14f);
+            Image ringL = UiFactory.Circle("RingL", titlePanel, new Color(0.90f, 0.40f, 0.50f));
+            UiFactory.Stretch(ringL.rectTransform, 0.470f, 0.42f, 0.492f, 0.52f);
+            Image ringR = UiFactory.Circle("RingR", titlePanel, new Color(0.90f, 0.40f, 0.50f));
+            UiFactory.Stretch(ringR.rectTransform, 0.508f, 0.42f, 0.530f, 0.52f);
+
+            Text title = UiFactory.Label("Title", titlePanel, "막내의 가위", 120, Color.white, TextAnchor.MiddleCenter);
+            UiFactory.Stretch(title.rectTransform, 0f, 0.60f, 1f, 0.82f);
+            Text tagline = UiFactory.Label("Tagline", titlePanel, "수건 접던 막내가 가위를 잡기까지", 36, new Color(0.80f, 0.84f, 0.95f), TextAnchor.MiddleCenter);
+            UiFactory.Stretch(tagline.rectTransform, 0f, 0.52f, 1f, 0.60f);
+
+            if (save != null)
+            {
+                string info = "Day " + save.day + "   Lv." + save.level + " " + LevelConfig.Names[Mathf.Clamp(save.level, 0, LevelConfig.MaxLevel)];
+                Button cont = UiFactory.MakeButton("Continue", titlePanel, "이어하기\n" + info, 36, new Color(0.30f, 0.60f, 0.45f), () => StartFromTitle(true));
+                UiFactory.Stretch(cont.GetComponent<RectTransform>(), 0.34f, 0.28f, 0.66f, 0.42f);
+                Button fresh = UiFactory.MakeButton("New", titlePanel, "새로 시작", 32, new Color(0.45f, 0.50f, 0.62f), OnNewGamePressed);
+                UiFactory.Stretch(fresh.GetComponent<RectTransform>(), 0.34f, 0.14f, 0.66f, 0.25f);
+                titleNewText = fresh.GetComponentInChildren<Text>();
+            }
+            else
+            {
+                Button start = UiFactory.MakeButton("Start", titlePanel, "시작하기", 44, new Color(0.30f, 0.60f, 0.45f), () => StartFromTitle(false));
+                UiFactory.Stretch(start.GetComponent<RectTransform>(), 0.34f, 0.24f, 0.66f, 0.38f);
+            }
+
+            Text ver = UiFactory.Label("Version", titlePanel, "프로토타입 v0.5", 22, new Color(0.60f, 0.64f, 0.75f), TextAnchor.LowerRight);
+            UiFactory.Stretch(ver.rectTransform, 0.60f, 0.01f, 0.99f, 0.07f);
+        }
+
+        void OnNewGamePressed()
+        {
+            if (!newArmed)
+            {
+                newArmed = true;
+                if (titleNewText != null) titleNewText.text = "저장이 지워져요. 한 번 더";
+                return;
+            }
+            StartFromTitle(false);
+        }
+
+        void StartFromTitle(bool resume)
+        {
+            if (titlePanel != null) Destroy(titlePanel.gameObject);
+            titlePanel = null;
+            if (resume)
+            {
+                ApplySave(SaveData.Load());
+                StartMorning();
+            }
+            else
+            {
+                ResetProgress();
+                ShowSetup();
+            }
+        }
+
+        // ---------- 새 게임 설정: 이름, 성별, 미용실 이름 ----------
+
+        RectTransform setupPanel;
+        int setupGender;
+        Button[] genderButtons;
+        static readonly string[] GenderNames = { "여성", "남성", "밝히지 않음" };
+
+        InputField MakeInput(Transform parent, string placeholder, string initial, int limit)
+        {
+            Image bg = UiFactory.Panel("Input", parent, new Color(1f, 1f, 1f, 0.95f));
+            InputField field = bg.gameObject.AddComponent<InputField>();
+            Text text = UiFactory.Label("Text", bg.transform, "", 40, TextDark, TextAnchor.MiddleLeft);
+            text.supportRichText = false;
+            text.rectTransform.offsetMin = new Vector2(20f, 0f);
+            text.rectTransform.offsetMax = new Vector2(-20f, 0f);
+            Text ph = UiFactory.Label("Placeholder", bg.transform, placeholder, 40, new Color(0.55f, 0.55f, 0.60f), TextAnchor.MiddleLeft);
+            ph.rectTransform.offsetMin = new Vector2(20f, 0f);
+            ph.rectTransform.offsetMax = new Vector2(-20f, 0f);
+            field.textComponent = text;
+            field.placeholder = ph;
+            field.characterLimit = limit;
+            field.text = initial;
+            return field;
+        }
+
+        void ShowSetup()
+        {
+            if (setupPanel != null) Destroy(setupPanel.gameObject);
+            Image bg = UiFactory.Panel("SetupPanel", canvasRoot, new Color(0.96f, 0.93f, 0.88f));
+            UiFactory.Stretch(bg.rectTransform, 0f, 0f, 1f, 1f);
+            setupPanel = bg.rectTransform;
+            setupPanel.SetAsLastSibling();
+            setupGender = 0;
+
+            Text head = UiFactory.Label("Head", setupPanel, "입사 서류", 64, TextDark, TextAnchor.MiddleCenter);
+            UiFactory.Stretch(head.rectTransform, 0f, 0.84f, 1f, 0.97f);
+
+            Text nameLabel = UiFactory.Label("NameLabel", setupPanel, "내 이름", 36, TextDark, TextAnchor.MiddleRight);
+            UiFactory.Stretch(nameLabel.rectTransform, 0.10f, 0.68f, 0.30f, 0.78f);
+            InputField nameField = MakeInput(setupPanel, "이름 (최대 6글자)", "", 6);
+            UiFactory.Stretch(nameField.GetComponent<RectTransform>(), 0.32f, 0.68f, 0.88f, 0.78f);
+
+            Text genderLabel = UiFactory.Label("GenderLabel", setupPanel, "성별", 36, TextDark, TextAnchor.MiddleRight);
+            UiFactory.Stretch(genderLabel.rectTransform, 0.10f, 0.54f, 0.30f, 0.64f);
+            genderButtons = new Button[3];
+            for (int i = 0; i < 3; i++)
+            {
+                int g = i;
+                genderButtons[i] = UiFactory.MakeButton("Gender" + i, setupPanel, GenderNames[i], 32, new Color(0.45f, 0.50f, 0.60f), () => { setupGender = g; RefreshGenderButtons(); });
+                float x0 = 0.32f + i * 0.19f;
+                UiFactory.Stretch(genderButtons[i].GetComponent<RectTransform>(), x0, 0.54f, x0 + 0.17f, 0.64f);
+            }
+            RefreshGenderButtons();
+
+            Text salonLabel = UiFactory.Label("SalonLabel", setupPanel, "미용실 이름", 36, TextDark, TextAnchor.MiddleRight);
+            UiFactory.Stretch(salonLabel.rectTransform, 0.06f, 0.40f, 0.30f, 0.50f);
+            InputField salonField = MakeInput(setupPanel, "미용실 이름 (최대 12글자)", "", 12);
+            UiFactory.Stretch(salonField.GetComponent<RectTransform>(), 0.32f, 0.40f, 0.88f, 0.50f);
+
+            Text hint = UiFactory.Label("Hint", setupPanel, "비워 두면 이름은 '막내', 미용실은 '해피헤어 번화가점'이 돼요.", 26, new Color(0.40f, 0.40f, 0.45f), TextAnchor.MiddleCenter);
+            UiFactory.Stretch(hint.rectTransform, 0f, 0.30f, 1f, 0.38f);
+
+            Button go = UiFactory.MakeButton("SetupDone", setupPanel, "출근하기", 48, new Color(0.30f, 0.60f, 0.45f), () => FinishSetup(nameField.text, salonField.text));
+            UiFactory.Stretch(go.GetComponent<RectTransform>(), 0.35f, 0.10f, 0.65f, 0.24f);
+        }
+
+        void RefreshGenderButtons()
+        {
+            if (genderButtons == null) return;
+            for (int i = 0; i < genderButtons.Length; i++)
+            {
+                Image img = genderButtons[i].GetComponent<Image>();
+                if (img != null) img.color = i == setupGender ? new Color(0.30f, 0.60f, 0.45f) : new Color(0.45f, 0.50f, 0.60f);
+            }
+        }
+
+        void FinishSetup(string name, string salon)
+        {
+            name = (name ?? "").Trim();
+            salon = (salon ?? "").Trim();
+            playerName = name.Length > 0 ? name : "막내";
+            salonName = salon.Length > 0 ? salon : "해피헤어 번화가점";
+            gender = setupGender;
+            if (setupPanel != null) Destroy(setupPanel.gameObject);
+            setupPanel = null;
+            StartMorning();
+        }
+
+        bool resetArmed;
+
+        // 저장을 지우고 처음부터 다시 시작 (두 번 눌러야 실행)
+        void OnResetPressed()
+        {
+            if (!resetArmed)
+            {
+                resetArmed = true;
+                if (resetButtonText != null) resetButtonText.text = "정말 지울까요? 한 번 더";
+                return;
+            }
+            resetArmed = false;
+            ResetProgress();
+            StartMorning();
+        }
+
+        void ResetProgress()
+        {
+            SaveData.Delete();
+            day = 1;
+            level = 0;
+            xp = 0;
+            score = 0;
+            done = 0;
+            missed = 0;
+            for (int i = 0; i < practice.Length; i++) practice[i] = 0;
+            for (int i = 0; i < tourSeen.Length; i++) tourSeen[i] = false;
+            introShown = false;
+            lastExamDay = 0;
+            graduated = false;
+            points = 0;
+            playerName = "막내";
+            gender = 0;
+            salonName = "해피헤어 번화가점";
+            CursorSkins.Reset();
+            closeness.Clear();
+            ResetExtras();
+        }
+
         void NextDay()
         {
             day++;
-            StartMorning();
+            StartMorning(); // 아침이 시작되면 자동 저장
         }
 
         // 오늘의 예약표: 세로줄 = 디자이너, 가로줄 = 시간, 칸 = 시술 (해당 시간이 되면 실제 요청 카드가 된다)
@@ -685,6 +1069,7 @@ namespace SalonIntern
             if (scoldCooldown[k] > 0f) return;
             if (refilling && refillKind == k) return; // 지금 채우는 중이면 봐준다
             scoldCooldown[k] = 20f;
+            dayScolds++;
             score = Mathf.Max(0, score - ScoldSupplyPenalty);
             Say("선생님들 잔소리: " + StockNames[k] + "이(가) 떨어졌잖아! (점수 -" + ScoldSupplyPenalty + ")");
             Toast("✖ " + StockNames[k] + "이(가) 떨어졌어요!  점수 -" + ScoldSupplyPenalty, false);
@@ -851,6 +1236,7 @@ namespace SalonIntern
             restKind = kind;
             int minutes = RestMinutes[kind];
             float amount = RestRecover[kind] * ((kind == 0 && IsLunchTime()) ? 1.5f : 1f);
+            amount = ApplySnack(amount);
 
             fatigue = Mathf.Max(0f, fatigue - amount);
             restBudget = Mathf.Max(0f, restBudget - minutes);
@@ -983,6 +1369,7 @@ namespace SalonIntern
                     timeLimit = TimeLimitFor(b.designer, b.procedure),
                 };
                 r.remaining = r.timeLimit;
+                AssignCustomer(r);
                 CreateCard(r);
                 dayRequests++;
                 active.Add(r);
@@ -1057,6 +1444,7 @@ namespace SalonIntern
                 };
                 r.remaining = r.timeLimit;
 
+                AssignCustomer(r);
                 CreateCard(r);
                 dayRequests++;
                 active.Add(r);
@@ -1194,7 +1582,7 @@ namespace SalonIntern
                         PickUpCustomer();
                         playerTarget = StepPos(task, 0);
                         playerWalking = true;
-                        Say(task.designer.name + " 선생님의 손님을 " + StepNames[task.route[0]] + "하러 모셔요");
+                        Say(CustomerGreeting(task) + " (" + StepNames[task.route[0]] + "하러 모셔요)");
                         return;
                     }
                 }
@@ -1394,13 +1782,14 @@ namespace SalonIntern
                 float mult = 0.7f + 0.6f * sat / 100f;
                 int friendBonus = Mathf.FloorToInt(Closeness(r.designer) / 10f);
                 int gained = Mathf.RoundToInt(StepScore(r) * mult) + (r.isVip ? 30 : (r.isReserved ? 10 : 0)) + friendBonus;
+                gained = Mathf.Max(0, gained + OnRequestCompleted(r, sat));
                 score += gained;
                 string satGrade = sat >= 85 ? "S" : (sat >= 60 ? "A" : (sat >= 30 ? "B" : "C"));
                 int closeDelta = sat >= 85 ? 4 : (sat >= 60 ? 2 : (sat >= 30 ? 0 : -2));
                 AddCloseness(r.designer, closeDelta);
-                fatigue = Mathf.Min(100f, fatigue + (r.isProcedure ? 6f : 4f) * LevelConfig.FatigueScale[level]);
+                fatigue = Mathf.Min(100f, fatigue + (r.isProcedure ? 6f : 4f) * FatigueMult());
                 AddXp(r.isProcedure ? 2 : 1);
-                Say(r.designer.name + " 선생님의 " + r.label + " 완료!");
+                Say(r.designer.name + " 선생님의 " + r.label + " 완료!" + (lastReaction.Length > 0 ? "  " + lastReaction : ""));
                 Toast("✔ " + r.designer.name + " 선생님의 " + r.label + " 완료!  만족도 " + satGrade + "   +" + gained + "점  XP +2" + (closeDelta > 0 ? "  ♥친분 +" + closeDelta : (closeDelta < 0 ? "  ♥친분 " + closeDelta : "")), sat >= 30);
             }
             RemoveRequest(r);
@@ -1477,7 +1866,7 @@ namespace SalonIntern
         {
             var pages = new List<string>
             {
-                "환영해요! 오늘부터 인턴이에요.\n\n초록색 '나'가 여러분이에요.\n말풍선을 누르면 그 자리로 걸어가요.",
+                playerName + "님, " + salonName + "에 온 걸 환영해요!\n오늘부터 인턴이에요.\n\n초록색 '나'가 여러분이에요.\n말풍선을 누르면 그 자리로 걸어가요.",
                 "회색 말풍선은 아직 못 하는 시술이에요.\n\n눌러서 '견학'하면 방법을 배우고 XP를 얻어요.\n견학은 시술 종류마다 한 번만 할 수 있어요.",
                 "왼쪽 아래 재료실에서 수건, 도구, 음료, 청소용품을 채워요.\n\n재료가 0이 되면 선생님에게 혼나요.",
                 "왼쪽 위 휴게실에서 쉬면 피로도가 줄어요.\n\n하루 휴게시간은 1시간이고, 손님이 밀렸을 때 쉬면 잔소리를 들어요.",
@@ -1542,7 +1931,7 @@ namespace SalonIntern
         void FinishFloorSweep(Request r, SweepResult result)
         {
             minigameActive = false;
-            fatigue = Mathf.Min(100f, fatigue + 8f * LevelConfig.FatigueScale[level]);
+            fatigue = Mathf.Min(100f, fatigue + 8f * FatigueMult());
 
             string grade;
             int points;
@@ -1731,11 +2120,7 @@ namespace SalonIntern
                 {
                     graduated = true;
                     Say("졸업시험 합격!");
-                    ShowDialog("졸업", new List<string>
-                    {
-                        "졸업시험 합격!\n\n" + result.hits + "/" + result.rounds + "번 성공했어요.",
-                        "축하해요! 인턴 과정을 모두 마쳤어요.\n\n다음은 디자이너 과정이에요. (준비 중)",
-                    }, "확인", () => { UpdateMorningTexts(); });
+                    ShowDialog("졸업", GraduationPages(result), "확인", () => { UpdateMorningTexts(); SaveGame(); });
                     return;
                 }
                 level++;
@@ -1743,7 +2128,7 @@ namespace SalonIntern
                 ShowDialog("승급 합격", new List<string>
                 {
                     result.hits + "/" + result.rounds + "번 성공!\n\n승급시험에 합격했어요.\n\nLv." + level + " " + LevelConfig.Names[level] + " 이(가) 되었어요.",
-                }, "확인", () => { UpdateMorningTexts(); });
+                }, "확인", () => { UpdateMorningTexts(); SaveGame(); });
             }
             else
             {
@@ -1751,7 +2136,7 @@ namespace SalonIntern
                 ShowDialog("불합격", new List<string>
                 {
                     result.hits + "/" + result.rounds + "번 성공 (필요 " + result.needed + "번)\n\n아쉽게 떨어졌어요.\n내일 아침에 다시 볼 수 있어요.",
-                }, "확인", () => { UpdateMorningTexts(); });
+                }, "확인", () => { UpdateMorningTexts(); SaveGame(); });
             }
             UpdateMorningTexts();
         }
@@ -1760,7 +2145,7 @@ namespace SalonIntern
         {
             morningBody.text =
                 "오늘의 목표 점수  " + DayConfig.TargetScore(level)
-                + "      현재  Lv." + level + " " + LevelConfig.Names[level] + "   XP " + XpLabel();
+                + "      현재  Lv." + level + " " + LevelConfig.Names[level] + "   XP " + XpLabel() + GoalLine();
             if (examInfoText != null) examInfoText.text = ExamStatusText();
             if (examButton != null)
             {
@@ -1789,7 +2174,7 @@ namespace SalonIntern
 
         void RefreshTop()
         {
-            topText.text = "Day " + day + "  " + DayConfig.FormatClock(ClockMinutes())
+            topText.text = playerName + "  Day " + day + "  " + DayConfig.FormatClock(ClockMinutes())
                 + "   Lv." + level + " " + LevelConfig.Names[level]
                 + "   XP " + XpLabel()
                 + "   점수 " + score
@@ -1842,6 +2227,7 @@ namespace SalonIntern
 
             // 미용실 바닥 (위에서 내려다본 그림)
             Image floor = UiFactory.Panel("SalonFloor", root, new Color(0.86f, 0.80f, 0.72f));
+            floorImage = floor;
             mapArea = floor.rectTransform;
             UiFactory.Stretch(mapArea, 0.03f, 0.22f, 0.97f, 0.89f);
             BuildFloor();
@@ -1878,6 +2264,25 @@ namespace SalonIntern
                 out morningPanel, out morningTitle, out morningBody);
             BuildDayPanel(root, "EveningPanel", "다음 날 시작", NextDay,
                 out eveningPanel, out eveningTitle, out eveningBody);
+
+            Button resetButton = UiFactory.MakeButton("ResetButton", morningPanel, "처음부터 다시", 22, new Color(0.55f, 0.35f, 0.35f), OnResetPressed);
+            UiFactory.Stretch(resetButton.GetComponent<RectTransform>(), 0.80f, 0.945f, 0.98f, 0.99f);
+            resetButtonText = resetButton.GetComponentInChildren<Text>();
+
+            Button toTitle = UiFactory.MakeButton("TitleButton", morningPanel, "시작 화면", 22, new Color(0.40f, 0.45f, 0.55f), ShowTitle);
+            UiFactory.Stretch(toTitle.GetComponent<RectTransform>(), 0.62f, 0.945f, 0.78f, 0.99f);
+
+            Button shopButton = UiFactory.MakeButton("ShopButton", morningPanel, "상점", 24, new Color(0.35f, 0.50f, 0.65f), OpenShop);
+            UiFactory.Stretch(shopButton.GetComponent<RectTransform>(), 0.02f, 0.945f, 0.20f, 0.99f);
+            shopButtonText = shopButton.GetComponentInChildren<Text>();
+
+            Button achButton = UiFactory.MakeButton("AchButton", morningPanel, "업적", 24, new Color(0.60f, 0.50f, 0.30f), OpenAchievements);
+            UiFactory.Stretch(achButton.GetComponent<RectTransform>(), 0.22f, 0.945f, 0.38f, 0.99f);
+
+            saveText = UiFactory.Label("SaveText", canvasRoot, "저장 중...", 22, new Color(1f, 1f, 1f, 0.95f), TextAnchor.MiddleRight);
+            saveText.raycastTarget = false;
+            UiFactory.Stretch(saveText.rectTransform, 0.80f, 0.895f, 0.985f, 0.94f);
+            saveText.gameObject.SetActive(false);
 
             Transform startTf = morningPanel.Find("NextButton");
             morningStartButton = startTf.GetComponent<Button>();
@@ -1968,6 +2373,7 @@ namespace SalonIntern
         {
             // 가운데 복도
             Image corridor = UiFactory.Panel("Corridor", mapArea, new Color(0.93f, 0.89f, 0.83f));
+            corridorImage = corridor;
             PlaceCenter(corridor.rectTransform, new Vector2(0f, 0f), new Vector2(1500f, 150f));
 
             // 휴게실
@@ -2031,6 +2437,7 @@ namespace SalonIntern
 
             // 내 인턴
             Image me = UiFactory.Circle("Player", mapArea, new Color(0.25f, 0.55f, 0.35f));
+            playerImage = me;
             playerRt = me.rectTransform;
             PlaceCenter(playerRt, new Vector2(-480f, 0f), new Vector2(70f, 70f));
             UiFactory.Label("PlayerText", me.transform, "나", 28, Color.white, TextAnchor.MiddleCenter);

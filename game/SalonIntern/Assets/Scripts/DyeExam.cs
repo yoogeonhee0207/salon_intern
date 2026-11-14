@@ -148,6 +148,7 @@ namespace SalonIntern
             stageB = true;
             stageA.gameObject.SetActive(false);
             pad.gameObject.SetActive(true);
+            SetCursor(CursorKind.Brush);
             feedbackText.text = message;
         }
 

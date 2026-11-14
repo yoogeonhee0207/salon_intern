@@ -43,6 +43,7 @@ namespace SalonIntern
                 Dot(pad.transform, guide[i], i == 0 || i == PointCount - 1 ? 34f : 12f,
                     i == 0 ? new Color(1f, 0.85f, 0.25f) : (i == PointCount - 1 ? new Color(0.30f, 0.75f, 0.45f) : new Color(0.45f, 0.40f, 0.35f)));
             }
+            SetCursor(CursorKind.Scissors);
             UpdateInfo();
         }
 

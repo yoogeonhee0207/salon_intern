@@ -64,6 +64,7 @@ namespace SalonIntern
             heatFill = fill.rectTransform;
             LabelAt("열", new Vector2(-400f, 330f), new Vector2(60f, 34f), 28, new Color(1f, 0.75f, 0.65f));
 
+            SetCursor(CursorKind.Dryer);
             UpdateInfo();
         }
 

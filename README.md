@@ -28,15 +28,15 @@ salon-intern-game/
 ├── README.md
 ├── docs/
 │   ├── design/
-│   │   └── game-design-v2.1.md   # 기획서 (최신)
+│   │   └── game-design.md        # 기획서 (최신)
 │   └── changelog.md              # 기획 변경 이력
 ├── characters/                   # 고정 인물 설정
-└── game/                         # 게임 프로젝트 (엔진 결정 후)
+└── game/                         # Unity 게임 프로젝트 (game/SalonIntern)
 ```
 
 ## 문서
 
-- [기획서 v2.1](docs/design/game-design-v2.1.md)
+- [기획서](docs/design/game-design.md)
 - [변경 이력](docs/changelog.md)
 
 ## 고정 인물

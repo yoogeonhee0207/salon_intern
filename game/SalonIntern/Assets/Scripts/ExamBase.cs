@@ -24,6 +24,9 @@ namespace SalonIntern
         public void OnPointerUp(PointerEventData e) { if (onUp != null) onUp(); }
     }
 
+    // 미니게임에서 손가락(마우스) 대신 보여주는 도구 모양
+    public enum CursorKind { None, Shower, Foam, Comb, Dryer, Scissors, Brush }
+
     // 승급시험 미니게임들의 공통 틀: 어두운 배경, 제목, 설명, 안내 줄, 결과 전달.
     public abstract class ExamBase : MonoBehaviour
     {
@@ -75,8 +78,80 @@ namespace SalonIntern
             Setup();
         }
 
+        RectTransform cursorRt;
+        CursorKind cursorKind = CursorKind.None;
+
+        // 도구 모양 커서로 바꾼다. None이면 원래 커서로 돌아간다.
+        protected void SetCursor(CursorKind kind)
+        {
+            if (cursorRt != null) Destroy(cursorRt.gameObject);
+            cursorRt = null;
+            cursorKind = kind;
+            Cursor.visible = kind == CursorKind.None;
+            if (kind == CursorKind.None) return;
+
+            cursorRt = UiFactory.Rect("Cursor", self);
+            Place(cursorRt, Vector2.zero, new Vector2(10f, 10f));
+            int tool = (int)kind - 1;
+            Color m = CursorSkins.MainColor(tool);
+            Color a = CursorSkins.AccentColor(tool);
+            switch (kind)
+            {
+                case CursorKind.Shower:
+                    Box(cursorRt, new Vector2(0f, 60f), new Vector2(18f, 90f), m);                       // 호스
+                    Dot(cursorRt, new Vector2(0f, 10f), 60f, a);                                           // 샤워 헤드
+                    for (int i = -1; i <= 1; i++) Dot(cursorRt, new Vector2(i * 20f, -30f - Mathf.Abs(i) * 8f), 12f, new Color(0.35f, 0.65f, 0.95f)); // 물방울
+                    break;
+                case CursorKind.Foam:
+                    Dot(cursorRt, new Vector2(-18f, -8f), 50f, new Color(m.r, m.g, m.b, 0.95f));
+                    Dot(cursorRt, new Vector2(18f, -8f), 50f, new Color(a.r, a.g, a.b, 0.95f));
+                    Dot(cursorRt, new Vector2(0f, 20f), 56f, new Color(m.r, m.g, m.b, 0.95f));
+                    Dot(cursorRt, new Vector2(-30f, 22f), 20f, new Color(a.r, a.g, a.b, 0.9f));
+                    break;
+                case CursorKind.Comb:
+                    Box(cursorRt, new Vector2(0f, 30f), new Vector2(80f, 22f), m);
+                    for (int i = -3; i <= 3; i++) Box(cursorRt, new Vector2(i * 12f, -4f), new Vector2(5f, 36f), a);
+                    break;
+                case CursorKind.Dryer:
+                    Box(cursorRt, new Vector2(10f, 20f), new Vector2(80f, 44f), m);                      // 몸통
+                    Box(cursorRt, new Vector2(-8f, -22f), new Vector2(26f, 46f), m * 0.75f);              // 손잡이
+                    Box(cursorRt, new Vector2(58f, 20f), new Vector2(20f, 34f), a);                      // 바람 나오는 곳
+                    break;
+                case CursorKind.Scissors:
+                    Box(cursorRt, new Vector2(-12f, 30f), new Vector2(10f, 70f), m).rectTransform.localRotation = Quaternion.Euler(0f, 0f, -18f);
+                    Box(cursorRt, new Vector2(12f, 30f), new Vector2(10f, 70f), m).rectTransform.localRotation = Quaternion.Euler(0f, 0f, 18f);
+                    Dot(cursorRt, new Vector2(-22f, -22f), 26f, a);
+                    Dot(cursorRt, new Vector2(22f, -22f), 26f, a);
+                    break;
+                case CursorKind.Brush:
+                    Box(cursorRt, new Vector2(0f, 40f), new Vector2(14f, 80f), m);                       // 손잡이
+                    Box(cursorRt, new Vector2(0f, -8f), new Vector2(34f, 34f), a);                       // 솔
+                    break;
+            }
+            MoveCursor();
+        }
+
+        void MoveCursor()
+        {
+            if (cursorRt == null) return;
+            UnityEngine.InputSystem.Pointer pointer = UnityEngine.InputSystem.Pointer.current;
+            if (pointer == null) return;
+            Vector2 local;
+            if (RectTransformUtility.ScreenPointToLocalPointInRectangle(self, pointer.position.ReadValue(), null, out local))
+            {
+                cursorRt.anchoredPosition = local;
+                cursorRt.SetAsLastSibling();
+            }
+        }
+
+        void OnDestroy()
+        {
+            Cursor.visible = true;
+        }
+
         void Update()
         {
+            MoveCursor();
             if (finishTimer >= 0f)
             {
                 finishTimer -= Time.deltaTime;
