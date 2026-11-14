@@ -26,7 +26,9 @@ namespace SalonIntern
         DesignerData[] designers;
         readonly List<Request> active = new List<Request>();
 
+        RectTransform canvasRoot;
         RectTransform cardArea;
+        bool minigameActive; // 미니게임 중에는 요청 시간이 멈춘다 (임시 규칙)
         Text topText;
         Text logText;
 
@@ -64,6 +66,7 @@ namespace SalonIntern
         void Update()
         {
             if (designers == null || designers.Length == 0) return;
+            if (minigameActive) return;
 
             // 제한시간 줄이기
             for (int i = active.Count - 1; i >= 0; i--)
@@ -170,6 +173,11 @@ namespace SalonIntern
                 AddXp(1);
                 Say(r.designer.name + " 선배의 " + r.label + "을(를) 견학했어요 (XP +1)");
             }
+            else if (r.label == "바닥 청소")
+            {
+                StartFloorSweep(r);
+                return; // 결과는 미니게임이 끝난 뒤 FinishFloorSweep에서 처리
+            }
             else
             {
                 done++;
@@ -178,6 +186,41 @@ namespace SalonIntern
                 Say(r.designer.name + " 선배의 " + r.label + " 완료!");
             }
             RemoveRequest(r);
+            RefreshTop();
+        }
+
+        void StartFloorSweep(Request r)
+        {
+            minigameActive = true;
+            FloorSweepGame.Show(canvasRoot, result => FinishFloorSweep(r, result));
+        }
+
+        void FinishFloorSweep(Request r, SweepResult result)
+        {
+            minigameActive = false;
+
+            string grade;
+            int points;
+            int gainXp;
+            float fraction = result.total > 0 ? (float)result.cleaned / result.total : 0f;
+
+            if (result.cleaned >= result.total)
+            {
+                if (result.elapsed <= 10f) { grade = "S"; points = 20; gainXp = 2; }
+                else if (result.elapsed <= 15f) { grade = "A"; points = 15; gainXp = 1; }
+                else { grade = "B"; points = 10; gainXp = 1; }
+            }
+            else if (fraction >= 0.6f) { grade = "B"; points = 10; gainXp = 1; }
+            else { grade = "C"; points = 3; gainXp = 0; }
+
+            if (grade == "C") missed++; else done++;
+            score += points;
+            AddXp(gainXp);
+
+            Say(r.designer.name + " 선배의 바닥 청소 " + grade + "등급! ("
+                + result.cleaned + "/" + result.total + ", 점수 +" + points + ")");
+
+            if (active.Contains(r)) RemoveRequest(r);
             RefreshTop();
         }
 
@@ -250,6 +293,7 @@ namespace SalonIntern
             scaler.matchWidthOrHeight = 0.5f;
 
             RectTransform root = canvasGo.GetComponent<RectTransform>();
+            canvasRoot = root;
 
             // 배경
             Image bg = UiFactory.Panel("Background", root, new Color(0.93f, 0.90f, 0.86f));
@@ -316,7 +360,9 @@ namespace SalonIntern
 
             // 안내 글자
             Text hint = UiFactory.Label("Hint", bg.transform,
-                r.isLocked ? "눌러서 견학 (XP +1)" : "눌러서 처리", 24, TextDark, TextAnchor.MiddleCenter);
+                r.isLocked ? "눌러서 견학 (XP +1)"
+                    : (r.label == "바닥 청소" ? "눌러서 청소 시작 (미니게임)" : "눌러서 처리"),
+                24, TextDark, TextAnchor.MiddleCenter);
             UiFactory.Stretch(hint.rectTransform, 0f, 0f, 1f, 0.15f);
         }
 
