@@ -17,6 +17,8 @@ namespace SalonIntern
             public string label;
             public bool isProcedure;
             public bool isLocked;
+            public bool isReserved;
+            public bool isVip;
             public float timeLimit;
             public float remaining;
 
@@ -51,6 +53,17 @@ namespace SalonIntern
         Text eveningTitle;
         Text eveningBody;
         RectTransform reservationArea;
+
+        // 오늘의 예약 (아침에 뽑아 두고, 해당 시간이 되면 실제 요청 카드로 만든다)
+        class Booking
+        {
+            public DesignerData designer;
+            public int procedure;
+            public bool isVip;
+        }
+        List<Booking>[] bookingsBySlot;
+        readonly List<Booking> waitingBookings = new List<Booking>();
+        int nextSlot;
 
         int level;
         int xp;
@@ -106,6 +119,10 @@ namespace SalonIntern
                 EndBusiness();
                 return;
             }
+
+            // 예약 시간이 된 칸의 예약을 대기열에 넣고, 디자이너가 비면 카드로 만든다
+            ReleaseBookings(minute);
+            SpawnWaitingBookings();
 
             // 제한시간 줄이기
             for (int i = active.Count - 1; i >= 0; i--)
@@ -169,6 +186,8 @@ namespace SalonIntern
             businessElapsed = 0f;
             lastClockMinute = -1;
             spawnTimer = 0.5f;
+            nextSlot = 0;
+            waitingBookings.Clear();
 
             dayStartLevel = level;
             dayStartScore = score;
@@ -187,6 +206,7 @@ namespace SalonIntern
             // 남은 요청은 디자이너들이 알아서 마무리한 것으로 처리 (감점 없음)
             foreach (Request r in active) Destroy(r.background.gameObject);
             active.Clear();
+            waitingBookings.Clear();
 
             int dayScore = score - dayStartScore;
             int dayDone = done - dayStartDone;
@@ -217,7 +237,7 @@ namespace SalonIntern
             StartMorning();
         }
 
-        // 오늘의 예약표: 세로줄 = 디자이너, 가로줄 = 시간, 칸 = 시술 (지금은 표시만 한다)
+        // 오늘의 예약표: 세로줄 = 디자이너, 가로줄 = 시간, 칸 = 시술 (해당 시간이 되면 실제 요청 카드가 된다)
         static readonly Color[] ProcedureColors =
         {
             new Color(0.70f, 0.85f, 1.00f), // 샴푸
@@ -250,6 +270,23 @@ namespace SalonIntern
             }
             // 예약 중 하나는 VIP로 가려서 보여준다
             Vector2Int vip = booked.Count > 0 ? booked[Random.Range(0, booked.Count)] : new Vector2Int(-1, -1);
+
+            // 실제 영업에서 쓸 수 있게 시간 칸별로 저장
+            bookingsBySlot = new List<Booking>[cols];
+            for (int c = 0; c < cols; c++)
+            {
+                bookingsBySlot[c] = new List<Booking>();
+                for (int r = 0; r < rows; r++)
+                {
+                    if (proc[r, c] < 0) continue;
+                    bookingsBySlot[c].Add(new Booking
+                    {
+                        designer = designers[r],
+                        procedure = proc[r, c],
+                        isVip = (vip.x == r && vip.y == c),
+                    });
+                }
+            }
 
             float nameW = 0.26f;
             float colW = (1f - nameW) / cols;
@@ -309,6 +346,43 @@ namespace SalonIntern
         }
 
         // ---------- 요청 만들기 ----------
+
+        void ReleaseBookings(int minute)
+        {
+            if (bookingsBySlot == null) return;
+            while (nextSlot < bookingsBySlot.Length && minute >= DayConfig.OpenMinutes + nextSlot * 60)
+            {
+                waitingBookings.AddRange(bookingsBySlot[nextSlot]);
+                nextSlot++;
+            }
+        }
+
+        void SpawnWaitingBookings()
+        {
+            for (int i = 0; i < waitingBookings.Count; i++)
+            {
+                Booking b = waitingBookings[i];
+                if (HasRequest(b.designer)) continue; // 디자이너가 다른 요청 중이면 기다린다
+
+                bool locked = level < LevelConfig.ProcedureUnlockLevel[b.procedure];
+                Request r = new Request
+                {
+                    designer = b.designer,
+                    label = LevelConfig.ProcedureNames[b.procedure],
+                    isProcedure = true,
+                    isLocked = locked,
+                    isReserved = true,
+                    isVip = b.isVip,
+                    timeLimit = LevelConfig.TimeLimit[level] * Mathf.Max(0.3f, b.designer.patienceMultiplier),
+                };
+                r.remaining = r.timeLimit;
+                CreateCard(r);
+                active.Add(r);
+                waitingBookings.RemoveAt(i);
+                Say((b.isVip ? "VIP " : "") + "예약 손님 도착: " + b.designer.name + " 선배 / " + r.label);
+                return; // 한 번에 한 장씩
+            }
+        }
 
         void TrySpawn()
         {
@@ -397,7 +471,7 @@ namespace SalonIntern
             else
             {
                 done++;
-                score += r.isProcedure ? 20 : 10;
+                score += (r.isProcedure ? 20 : 10) + (r.isVip ? 30 : (r.isReserved ? 10 : 0));
                 AddXp(r.isProcedure ? 2 : 1);
                 Say(r.designer.name + " 선배의 " + r.label + " 완료!");
             }
@@ -568,7 +642,7 @@ namespace SalonIntern
             UiFactory.Stretch(reservationArea, 0.04f, 0.19f, 0.96f, 0.79f);
 
             Text note = UiFactory.Label("Note", morningPanel,
-                "※ 예약은 아직 보여주기만 해요.\n다음 단계에서 실제 요청과 연결돼요.", 24, TextDark, TextAnchor.MiddleLeft);
+                "※ 예약 시간이 되면 그 디자이너의\n예약 손님이 카드로 나타나요. (VIP는 보너스 점수)", 24, TextDark, TextAnchor.MiddleLeft);
             UiFactory.Stretch(note.rectTransform, 0.04f, 0.02f, 0.33f, 0.17f);
             eveningPanel.gameObject.SetActive(false);
         }
@@ -594,6 +668,8 @@ namespace SalonIntern
         {
             Image bg = UiFactory.Panel("Card_" + r.designer.name, cardArea, r.isLocked ? CardLocked : CardNormal);
             r.background = bg;
+            if (r.isVip && !r.isLocked) bg.color = new Color(1f, 0.93f, 0.62f);
+            else if (r.isReserved && !r.isLocked) bg.color = new Color(0.90f, 0.95f, 1f);
 
             Button button = bg.gameObject.AddComponent<Button>();
             button.targetGraphic = bg;
@@ -606,6 +682,8 @@ namespace SalonIntern
 
             // 요청 내용
             string title = r.isLocked ? "[잠김] " + r.label : r.label;
+            if (r.isVip) title = "VIP " + title;
+            else if (r.isReserved) title = "예약 " + title;
             Text body = UiFactory.Label("Body", bg.transform, title, 40, TextDark, TextAnchor.MiddleCenter);
             UiFactory.Stretch(body.rectTransform, 0.04f, 0.28f, 0.96f, 0.60f);
 
