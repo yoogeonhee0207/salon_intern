@@ -5,10 +5,12 @@ using UnityEngine.UI;
 
 namespace SalonIntern
 {
-    // 요청 카드 시스템 프로토타입.
+    // 하루 구조(아침 -> 영업 -> 마감 정산)와 요청 카드 시스템 프로토타입.
     // 씬에 아무것도 놓지 않아도 Play를 누르면 이 스크립트가 자동으로 실행된다.
     public class GameController : MonoBehaviour
     {
+        enum Phase { Morning, Business, Evening }
+
         class Request
         {
             public DesignerData designer;
@@ -28,9 +30,27 @@ namespace SalonIntern
 
         RectTransform canvasRoot;
         RectTransform cardArea;
-        bool minigameActive; // 미니게임 중에는 요청 시간이 멈춘다 (임시 규칙)
+        bool minigameActive; // 미니게임 중에는 시계와 요청 시간이 멈춘다 (임시 규칙)
         Text topText;
         Text logText;
+
+        // 하루 진행
+        Phase phase = Phase.Morning;
+        int day = 1;
+        float businessElapsed;
+        int lastClockMinute = -1;
+        int dayStartLevel;
+        int dayStartScore;
+        int dayStartDone;
+        int dayStartMissed;
+
+        RectTransform morningPanel;
+        RectTransform eveningPanel;
+        Text morningTitle;
+        Text morningBody;
+        Text eveningTitle;
+        Text eveningBody;
+        RectTransform reservationArea;
 
         int level;
         int xp;
@@ -57,16 +77,35 @@ namespace SalonIntern
         {
             designers = DesignerLoader.Load();
             BuildUi();
-            Say(designers.Length == 0
-                ? "디자이너 데이터를 불러오지 못했어요. Console 창을 확인해 주세요."
-                : "영업 시작! 카드를 눌러 요청을 처리하세요.");
-            RefreshTop();
+
+            if (designers.Length == 0)
+            {
+                Say("디자이너 데이터를 불러오지 못했어요. Console 창을 확인해 주세요.");
+                RefreshTop();
+                return;
+            }
+            StartMorning();
         }
 
         void Update()
         {
             if (designers == null || designers.Length == 0) return;
+            if (phase != Phase.Business) return;
             if (minigameActive) return;
+
+            // 영업 시계 흐르기
+            businessElapsed += Time.deltaTime;
+            int minute = ClockMinutes();
+            if (minute != lastClockMinute)
+            {
+                lastClockMinute = minute;
+                RefreshTop();
+            }
+            if (businessElapsed >= DayConfig.BusinessSeconds)
+            {
+                EndBusiness();
+                return;
+            }
 
             // 제한시간 줄이기
             for (int i = active.Count - 1; i >= 0; i--)
@@ -91,6 +130,182 @@ namespace SalonIntern
                     spawnTimer = Random.Range(1.5f, 4f);
                 }
             }
+        }
+
+        // ---------- 하루 흐름 ----------
+
+        int ClockMinutes()
+        {
+            float t = Mathf.Clamp01(businessElapsed / DayConfig.BusinessSeconds);
+            return DayConfig.OpenMinutes + Mathf.FloorToInt(t * (DayConfig.CloseMinutes - DayConfig.OpenMinutes));
+        }
+
+        string XpLabel()
+        {
+            return level >= LevelConfig.MaxLevel ? "MAX" : xp + "/" + LevelConfig.XpToNext(level);
+        }
+
+        void StartMorning()
+        {
+            phase = Phase.Morning;
+            businessElapsed = 0f;
+            lastClockMinute = -1;
+
+            morningTitle.text = "Day " + day + "   아침 준비";
+            morningBody.text =
+                "오늘의 목표 점수  " + DayConfig.TargetScore(level)
+                + "      현재  Lv." + level + " " + LevelConfig.Names[level] + "   XP " + XpLabel();
+            BuildReservationGrid();
+
+            morningPanel.gameObject.SetActive(true);
+            eveningPanel.gameObject.SetActive(false);
+            Say("아침 준비 중. 예약표를 확인하고 영업을 시작하세요.");
+            RefreshTop();
+        }
+
+        void StartBusiness()
+        {
+            phase = Phase.Business;
+            businessElapsed = 0f;
+            lastClockMinute = -1;
+            spawnTimer = 0.5f;
+
+            dayStartLevel = level;
+            dayStartScore = score;
+            dayStartDone = done;
+            dayStartMissed = missed;
+
+            morningPanel.gameObject.SetActive(false);
+            Say("영업 시작! 카드를 눌러 요청을 처리하세요.");
+            RefreshTop();
+        }
+
+        void EndBusiness()
+        {
+            phase = Phase.Evening;
+
+            // 남은 요청은 디자이너들이 알아서 마무리한 것으로 처리 (감점 없음)
+            foreach (Request r in active) Destroy(r.background.gameObject);
+            active.Clear();
+
+            int dayScore = score - dayStartScore;
+            int dayDone = done - dayStartDone;
+            int dayMissed = missed - dayStartMissed;
+            int target = DayConfig.TargetScore(dayStartLevel);
+            string grade = DayConfig.Grade(dayScore, target);
+
+            string levelLine = level > dayStartLevel
+                ? "레벨 업!  Lv." + dayStartLevel + " → Lv." + level + " " + LevelConfig.Names[level]
+                : "Lv." + level + " " + LevelConfig.Names[level];
+
+            eveningTitle.text = "Day " + day + "   마감 정산";
+            eveningBody.text =
+                "오늘의 평가   " + grade + "\n\n"
+                + "오늘 점수   " + dayScore + "   (목표 " + target + ")\n"
+                + "완료 " + dayDone + "건     놓침 " + dayMissed + "건\n\n"
+                + levelLine + "     XP " + XpLabel() + "\n\n"
+                + DayConfig.Comment(grade);
+
+            eveningPanel.gameObject.SetActive(true);
+            Say("영업 종료! 오늘 하루 수고했어요.");
+            RefreshTop();
+        }
+
+        void NextDay()
+        {
+            day++;
+            StartMorning();
+        }
+
+        // 오늘의 예약표: 세로줄 = 디자이너, 가로줄 = 시간, 칸 = 시술 (지금은 표시만 한다)
+        static readonly Color[] ProcedureColors =
+        {
+            new Color(0.70f, 0.85f, 1.00f), // 샴푸
+            new Color(1.00f, 0.80f, 0.90f), // 롤
+            new Color(1.00f, 0.85f, 0.65f), // 염색
+            new Color(0.75f, 0.92f, 0.75f), // 드라이
+        };
+
+        void BuildReservationGrid()
+        {
+            foreach (Transform child in reservationArea) Destroy(child.gameObject);
+
+            int rows = designers.Length;
+            int cols = DayConfig.ReservationSlots;
+
+            // 예약 뽑기: 칸마다 확률로 예약이 생기고, 시술은 디자이너 확률표로 정한다
+            int[,] proc = new int[rows, cols];
+            List<Vector2Int> booked = new List<Vector2Int>();
+            for (int r = 0; r < rows; r++)
+            {
+                for (int c = 0; c < cols; c++)
+                {
+                    proc[r, c] = -1;
+                    if (Random.value < DayConfig.ReservationChance)
+                    {
+                        proc[r, c] = PickProcedure(designers[r]);
+                        booked.Add(new Vector2Int(r, c));
+                    }
+                }
+            }
+            // 예약 중 하나는 VIP로 가려서 보여준다
+            Vector2Int vip = booked.Count > 0 ? booked[Random.Range(0, booked.Count)] : new Vector2Int(-1, -1);
+
+            float nameW = 0.26f;
+            float colW = (1f - nameW) / cols;
+            float rowH = 1f / (rows + 1);
+            Color headerBg = new Color(0.20f, 0.20f, 0.26f);
+            Color nameBg = new Color(0.90f, 0.86f, 0.80f);
+            Color emptyBg = new Color(1f, 1f, 1f, 0.85f);
+
+            // 맨 윗줄: 시간
+            GridCell(0f, nameW, 0, rowH, "디자이너 / 시간", headerBg, Color.white, 22);
+            for (int c = 0; c < cols; c++)
+            {
+                string time = DayConfig.FormatClock(DayConfig.OpenMinutes + c * 60);
+                GridCell(nameW + c * colW, nameW + (c + 1) * colW, 0, rowH, time, headerBg, Color.white, 22);
+            }
+
+            // 디자이너 한 명당 한 줄
+            for (int r = 0; r < rows; r++)
+            {
+                DesignerData d = designers[r];
+                GridCell(0f, nameW, r + 1, rowH, d.name + " · " + d.specialty, nameBg, TextDark, 20);
+
+                for (int c = 0; c < cols; c++)
+                {
+                    float x0 = nameW + c * colW;
+                    float x1 = nameW + (c + 1) * colW;
+
+                    if (proc[r, c] < 0)
+                    {
+                        GridCell(x0, x1, r + 1, rowH, "", emptyBg, TextDark, 22);
+                    }
+                    else if (vip.x == r && vip.y == c)
+                    {
+                        GridCell(x0, x1, r + 1, rowH, "VIP", new Color(0.95f, 0.80f, 0.35f), TextDark, 22);
+                    }
+                    else
+                    {
+                        GridCell(x0, x1, r + 1, rowH, LevelConfig.ProcedureShortNames[proc[r, c]],
+                            ProcedureColors[proc[r, c]], TextDark, 22);
+                    }
+                }
+            }
+        }
+
+        void GridCell(float x0, float x1, int row, float rowH, string text, Color bg, Color fg, int size)
+        {
+            float yMax = 1f - row * rowH;
+            float yMin = yMax - rowH;
+
+            Image cell = UiFactory.Panel("Cell", reservationArea, bg);
+            UiFactory.Stretch(cell.rectTransform, x0, yMin, x1, yMax);
+            cell.rectTransform.offsetMin = new Vector2(1.5f, 1.5f);
+            cell.rectTransform.offsetMax = new Vector2(-1.5f, -1.5f);
+
+            Text label = UiFactory.Label("Text", cell.transform, text, size, fg, TextAnchor.MiddleCenter);
+            label.horizontalOverflow = HorizontalWrapMode.Overflow;
         }
 
         // ---------- 요청 만들기 ----------
@@ -166,6 +381,7 @@ namespace SalonIntern
 
         void OnCardClicked(Request r)
         {
+            if (phase != Phase.Business) return;
             if (!active.Contains(r)) return;
 
             if (r.isLocked)
@@ -251,26 +467,30 @@ namespace SalonIntern
 
         void ChangeLevel(int delta)
         {
+            if (phase != Phase.Business || minigameActive) return;
             level = Mathf.Clamp(level + delta, 0, LevelConfig.MaxLevel);
             xp = 0;
             Say("[테스트] Lv." + level + " " + LevelConfig.Names[level] + " 로 변경");
             RefreshTop();
         }
 
+        // 테스트용: 하루를 바로 끝낸다
+        void SkipToEvening()
+        {
+            if (phase != Phase.Business || minigameActive) return;
+            EndBusiness();
+        }
+
         // ---------- 화면 ----------
 
         void RefreshTop()
         {
-            string xpText = level >= LevelConfig.MaxLevel
-                ? "MAX"
-                : xp + "/" + LevelConfig.XpToNext(level);
-
-            topText.text = "Lv." + level + " " + LevelConfig.Names[level]
-                + "   XP " + xpText
+            topText.text = "Day " + day + "  " + DayConfig.FormatClock(ClockMinutes())
+                + "   Lv." + level + " " + LevelConfig.Names[level]
+                + "   XP " + XpLabel()
                 + "   점수 " + score
                 + "   완료 " + done
-                + "   놓침 " + missed
-                + "   (동시 " + LevelConfig.MaxConcurrent[level] + "건)";
+                + "   놓침 " + missed;
         }
 
         void Say(string message)
@@ -302,11 +522,13 @@ namespace SalonIntern
             // 상단 바
             Image top = UiFactory.Panel("TopBar", root, new Color(0.20f, 0.20f, 0.26f));
             UiFactory.Stretch(top.rectTransform, 0f, 0.91f, 1f, 1f);
-            topText = UiFactory.Label("TopText", top.transform, "", 34, Color.white, TextAnchor.MiddleLeft);
+            topText = UiFactory.Label("TopText", top.transform, "", 28, Color.white, TextAnchor.MiddleLeft);
             topText.rectTransform.offsetMin = new Vector2(30f, 0f);
-            topText.rectTransform.offsetMax = new Vector2(-330f, 0f);
+            topText.rectTransform.offsetMax = new Vector2(-520f, 0f);
 
-            // 테스트용 레벨 버튼
+            // 테스트용 버튼: 하루 끝내기, 레벨 조절
+            Button skip = UiFactory.MakeButton("SkipDay", top.transform, "하루 끝", 28, new Color(0.65f, 0.40f, 0.30f), SkipToEvening);
+            UiFactory.Stretch(skip.GetComponent<RectTransform>(), 0.76f, 0.15f, 0.85f, 0.85f);
             Button minus = UiFactory.MakeButton("LevelMinus", top.transform, "Lv -", 32, new Color(0.45f, 0.45f, 0.55f), () => ChangeLevel(-1));
             UiFactory.Stretch(minus.GetComponent<RectTransform>(), 0.86f, 0.15f, 0.925f, 0.85f);
             Button plus = UiFactory.MakeButton("LevelPlus", top.transform, "Lv +", 32, new Color(0.30f, 0.60f, 0.45f), () => ChangeLevel(1));
@@ -329,6 +551,43 @@ namespace SalonIntern
             logText = UiFactory.Label("LogText", bottom.transform, "", 36, Color.white, TextAnchor.MiddleLeft);
             logText.rectTransform.offsetMin = new Vector2(30f, 0f);
             logText.rectTransform.offsetMax = new Vector2(-30f, 0f);
+
+            // 아침 준비 화면, 마감 정산 화면 (평소에는 하나만 켜진다)
+            BuildDayPanel(root, "MorningPanel", "영업 시작", StartBusiness,
+                out morningPanel, out morningTitle, out morningBody);
+            BuildDayPanel(root, "EveningPanel", "다음 날 시작", NextDay,
+                out eveningPanel, out eveningTitle, out eveningBody);
+
+            // 아침 화면 배치: 제목, 요약 줄, 예약표 시간표, 안내 문구
+            UiFactory.Stretch(morningTitle.rectTransform, 0f, 0.885f, 1f, 0.99f);
+            UiFactory.Stretch(morningBody.rectTransform, 0.04f, 0.80f, 0.96f, 0.875f);
+            morningBody.fontSize = 32;
+            morningBody.alignment = TextAnchor.MiddleCenter;
+
+            reservationArea = UiFactory.Rect("ReservationGrid", morningPanel);
+            UiFactory.Stretch(reservationArea, 0.04f, 0.19f, 0.96f, 0.79f);
+
+            Text note = UiFactory.Label("Note", morningPanel,
+                "※ 예약은 아직 보여주기만 해요.\n다음 단계에서 실제 요청과 연결돼요.", 24, TextDark, TextAnchor.MiddleLeft);
+            UiFactory.Stretch(note.rectTransform, 0.04f, 0.02f, 0.33f, 0.17f);
+            eveningPanel.gameObject.SetActive(false);
+        }
+
+        static void BuildDayPanel(RectTransform root, string name, string buttonText, System.Action onButton,
+            out RectTransform panel, out Text title, out Text body)
+        {
+            Image p = UiFactory.Panel(name, root, new Color(0.96f, 0.93f, 0.88f));
+            UiFactory.Stretch(p.rectTransform, 0f, 0f, 1f, 1f);
+            panel = p.rectTransform;
+
+            title = UiFactory.Label("Title", p.transform, "", 60, TextDark, TextAnchor.MiddleCenter);
+            UiFactory.Stretch(title.rectTransform, 0f, 0.84f, 1f, 0.97f);
+
+            body = UiFactory.Label("Body", p.transform, "", 36, TextDark, TextAnchor.UpperLeft);
+            UiFactory.Stretch(body.rectTransform, 0.10f, 0.22f, 0.90f, 0.82f);
+
+            Button button = UiFactory.MakeButton("NextButton", p.transform, buttonText, 48, new Color(0.30f, 0.60f, 0.45f), onButton);
+            UiFactory.Stretch(button.GetComponent<RectTransform>(), 0.35f, 0.06f, 0.65f, 0.17f);
         }
 
         void CreateCard(Request r)

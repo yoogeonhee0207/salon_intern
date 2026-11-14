@@ -1,0 +1,49 @@
+namespace SalonIntern
+{
+    // 하루 구조 수치. 기획서 2장 기준이며 모두 시작점이라 테스트하며 조정한다.
+    public static class DayConfig
+    {
+        // 영업 시간의 현실 길이(초). 480초 = 8분.
+        // 테스트할 때는 60 정도로 줄이면 하루가 금방 끝나서 확인하기 편하다.
+        public const float BusinessSeconds = 480f;
+
+        // 영업 시간 (분 단위): 10:00 ~ 18:00
+        public const int OpenMinutes = 10 * 60;
+        public const int CloseMinutes = 18 * 60;
+
+        // 아침 예약표: 10시부터 1시간 단위로 8칸(10~17시), 칸마다 예약이 있을 확률
+        public const int ReservationSlots = 8;
+        public const float ReservationChance = 0.18f;
+
+        // 오늘의 목표 점수 (임시 공식)
+        public static int TargetScore(int level)
+        {
+            return 600 + 200 * level;
+        }
+
+        // 하루 평가 등급
+        public static string Grade(int score, int target)
+        {
+            if (score >= target * 1.2f) return "S";
+            if (score >= target) return "A";
+            if (score >= target * 0.6f) return "B";
+            return "C";
+        }
+
+        public static string Comment(string grade)
+        {
+            switch (grade)
+            {
+                case "S": return "원장님이 말없이 고개를 끄덕였어요.";
+                case "A": return "선배들이 수고했다고 한마디씩 건네요.";
+                case "B": return "내일은 조금 더 잘할 수 있을 거예요.";
+                default: return "오늘은 정신없는 하루였어요. 내일 다시 힘내요!";
+            }
+        }
+
+        public static string FormatClock(int minutes)
+        {
+            return (minutes / 60).ToString("00") + ":" + (minutes % 60).ToString("00");
+        }
+    }
+}

@@ -26,6 +26,7 @@ namespace SalonIntern
         // 시술 이름과 해금 레벨 (샴푸, 롤 말기, 염색, 드라이 순서)
         public static readonly string[] ProcedureNames = { "샴푸", "파마 롤 말기", "염색 배합/도포", "드라이" };
         public static readonly int[] ProcedureUnlockLevel = { 1, 2, 3, 4 };
+        public static readonly string[] ProcedureShortNames = { "샴푸", "롤", "염색", "드라이" };
 
         // Lv.0 잡무 7종
         public static readonly string[] ChoreNames =
