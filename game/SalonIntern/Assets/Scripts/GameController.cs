@@ -162,6 +162,7 @@ namespace SalonIntern
         {
             designers = DesignerLoader.Load();
             BuildUi();
+            Time.timeScale = 1f;
             Sfx.StartBgm();
 
             if (designers.Length == 0)
@@ -623,8 +624,7 @@ namespace SalonIntern
                 UiFactory.Stretch(start.GetComponent<RectTransform>(), 0.34f, 0.24f, 0.66f, 0.38f);
             }
 
-            Button snd = UiFactory.MakeButton("Sound", titlePanel, SoundLabel(), 24, new Color(0.40f, 0.45f, 0.55f), null);
-            snd.onClick.AddListener(() => { Sfx.Toggle(); snd.GetComponentInChildren<Text>().text = SoundLabel(); });
+            Button snd = UiFactory.MakeButton("Sound", titlePanel, "설정", 24, new Color(0.40f, 0.45f, 0.55f), OpenSettings);
             UiFactory.Stretch(snd.GetComponent<RectTransform>(), 0.02f, 0.03f, 0.16f, 0.09f);
 
             Text ver = UiFactory.Label("Version", titlePanel, "프로토타입 v0.5", 22, new Color(0.60f, 0.64f, 0.75f), TextAnchor.LowerRight);
@@ -2296,13 +2296,21 @@ namespace SalonIntern
             topText.rectTransform.offsetMin = new Vector2(30f, 0f);
             topText.rectTransform.offsetMax = new Vector2(-520f, 0f);
 
-            // 테스트용 버튼: 하루 끝내기, 레벨 조절
+            // 설정 버튼 (정식 모드에서는 오른쪽 끝, 테스트 모드에서는 테스트 버튼 왼쪽)
+            Button settingsButton = UiFactory.MakeButton("SettingsButton", top.transform, "설정", 28, new Color(0.40f, 0.45f, 0.55f), OpenSettings);
+            if (LevelConfig.TestMode) UiFactory.Stretch(settingsButton.GetComponent<RectTransform>(), 0.64f, 0.15f, 0.74f, 0.85f);
+            else UiFactory.Stretch(settingsButton.GetComponent<RectTransform>(), 0.87f, 0.15f, 0.99f, 0.85f);
+
+            // 테스트용 버튼: 하루 끝내기, 레벨 조절 (TestMode일 때만 보임)
             Button skip = UiFactory.MakeButton("SkipDay", top.transform, "하루 끝", 28, new Color(0.65f, 0.40f, 0.30f), SkipToEvening);
             UiFactory.Stretch(skip.GetComponent<RectTransform>(), 0.76f, 0.15f, 0.85f, 0.85f);
             Button minus = UiFactory.MakeButton("LevelMinus", top.transform, "Lv -", 32, new Color(0.45f, 0.45f, 0.55f), () => ChangeLevel(-1));
             UiFactory.Stretch(minus.GetComponent<RectTransform>(), 0.86f, 0.15f, 0.925f, 0.85f);
             Button plus = UiFactory.MakeButton("LevelPlus", top.transform, "Lv +", 32, new Color(0.30f, 0.60f, 0.45f), () => ChangeLevel(1));
             UiFactory.Stretch(plus.GetComponent<RectTransform>(), 0.935f, 0.15f, 0.995f, 0.85f);
+            skip.gameObject.SetActive(LevelConfig.TestMode);
+            minus.gameObject.SetActive(LevelConfig.TestMode);
+            plus.gameObject.SetActive(LevelConfig.TestMode);
 
             // 미용실 바닥 (위에서 내려다본 그림)
             Image floor = UiFactory.Panel("SalonFloor", root, new Color(0.86f, 0.80f, 0.72f));
@@ -2355,8 +2363,7 @@ namespace SalonIntern
             UiFactory.Stretch(shopButton.GetComponent<RectTransform>(), 0.02f, 0.945f, 0.20f, 0.99f);
             shopButtonText = shopButton.GetComponentInChildren<Text>();
 
-            Button soundButton = UiFactory.MakeButton("SoundButton", morningPanel, SoundLabel(), 24, new Color(0.40f, 0.50f, 0.45f), null);
-            soundButton.onClick.AddListener(() => { Sfx.Toggle(); soundButton.GetComponentInChildren<Text>().text = SoundLabel(); });
+            Button soundButton = UiFactory.MakeButton("SoundButton", morningPanel, "설정", 24, new Color(0.40f, 0.50f, 0.45f), OpenSettings);
             UiFactory.Stretch(soundButton.GetComponent<RectTransform>(), 0.40f, 0.945f, 0.60f, 0.99f);
 
             Button achButton = UiFactory.MakeButton("AchButton", morningPanel, "업적", 24, new Color(0.60f, 0.50f, 0.30f), OpenAchievements);

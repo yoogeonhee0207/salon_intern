@@ -16,6 +16,8 @@ namespace SalonIntern
         static AudioClip bgm;
         static bool loaded;
         static bool muted;
+        static float volume = 1f;
+        const string VolKey = "SalonIntern.Volume";
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         static void ResetStatics()
@@ -39,8 +41,27 @@ namespace SalonIntern
         static void Load()
         {
             loaded = true;
-            try { muted = PlayerPrefs.GetInt(PrefKey, 1) == 0; }
-            catch (System.Exception) { muted = false; }
+            try { muted = PlayerPrefs.GetInt(PrefKey, 1) == 0; volume = Mathf.Clamp01(PlayerPrefs.GetFloat(VolKey, 1f)); }
+            catch (System.Exception) { muted = false; volume = 1f; }
+        }
+
+        // 음량 0~1. 효과음과 배경음에 함께 곱해진다.
+        public static float Volume
+        {
+            get
+            {
+                if (!loaded) Load();
+                return volume;
+            }
+        }
+
+        public static void SetVolume(float v)
+        {
+            if (!loaded) Load();
+            volume = Mathf.Clamp01(v);
+            try { PlayerPrefs.SetFloat(VolKey, volume); PlayerPrefs.Save(); }
+            catch (System.Exception) { }
+            if (Application.isPlaying && bgmSource != null) bgmSource.volume = 0.22f * volume;
         }
 
         static void Ensure()
@@ -55,7 +76,7 @@ namespace SalonIntern
             bgmSource = go.AddComponent<AudioSource>();
             bgmSource.playOnAwake = false;
             bgmSource.loop = true;
-            bgmSource.volume = 0.22f;
+            bgmSource.volume = 0.22f * volume;
 
             clips = new AudioClip[8];
             clips[(int)Kind.Click] = Make("click", Blip(880f, 0.05f, 0.5f));
@@ -74,7 +95,7 @@ namespace SalonIntern
             Ensure();
             if (muted) return;
             AudioClip c = clips[(int)kind];
-            if (c != null) sfxSource.PlayOneShot(c, 0.7f);
+            if (c != null) sfxSource.PlayOneShot(c, 0.7f * volume);
         }
 
         public static void StartBgm()

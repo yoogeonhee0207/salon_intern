@@ -43,7 +43,7 @@ namespace SalonIntern
 
         // 다음 레벨까지 필요한 XP (임시 공식)
         // 테스트용: true면 경험치와 시험 응시 조건을 최하로 낮춘다. 출시 전에 false로 바꿀 것.
-        public const bool TestMode = true;
+        public const bool TestMode = false;
 
         public static int XpToNext(int level)
         {

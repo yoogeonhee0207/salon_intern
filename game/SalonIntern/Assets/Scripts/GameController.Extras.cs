@@ -13,6 +13,66 @@ namespace SalonIntern
         const bool ExtrasTest = false;
         bool testGiftGiven, gradPreviewShown;
 
+        // ---------- 설정 화면 (소리 크기, 일시정지) ----------
+
+        RectTransform settingsPanel;
+
+        void OpenSettings()
+        {
+            if (settingsPanel != null) return;
+            bool titleUp = titlePanel != null;
+            bool pausing = !titleUp && phase == Phase.Business;
+            if (pausing) Time.timeScale = 0f;
+
+            Image dim = UiFactory.Panel("SettingsDim", canvasRoot, new Color(0f, 0f, 0f, 0.65f));
+            UiFactory.Stretch(dim.rectTransform, 0f, 0f, 1f, 1f);
+            settingsPanel = dim.rectTransform;
+            settingsPanel.SetAsLastSibling();
+
+            Image box = UiFactory.Panel("SettingsBox", settingsPanel, new Color(0.96f, 0.93f, 0.88f));
+            UiFactory.Stretch(box.rectTransform, 0.30f, 0.14f, 0.70f, 0.86f);
+
+            Text head = UiFactory.Label("SettingsTitle", box.transform, pausing ? "일시정지" : "설정", 44, TextDark, TextAnchor.MiddleCenter);
+            UiFactory.Stretch(head.rectTransform, 0f, 0.84f, 1f, 0.97f);
+
+            Button sound = UiFactory.MakeButton("SoundToggle", box.transform, SoundLabel(), 32, new Color(0.40f, 0.50f, 0.45f), null);
+            sound.onClick.AddListener(() => { Sfx.Toggle(); sound.GetComponentInChildren<Text>().text = SoundLabel(); });
+            UiFactory.Stretch(sound.GetComponent<RectTransform>(), 0.12f, 0.66f, 0.88f, 0.80f);
+
+            Text volLabel = UiFactory.Label("VolumeLabel", box.transform, VolumeLabel(), 32, TextDark, TextAnchor.MiddleCenter);
+            UiFactory.Stretch(volLabel.rectTransform, 0.34f, 0.48f, 0.66f, 0.62f);
+            Button volDown = UiFactory.MakeButton("VolDown", box.transform, "-", 40, new Color(0.45f, 0.45f, 0.55f), null);
+            volDown.onClick.AddListener(() => { Sfx.SetVolume(Sfx.Volume - 0.1f); volLabel.text = VolumeLabel(); Sfx.Play(Sfx.Kind.Click); });
+            UiFactory.Stretch(volDown.GetComponent<RectTransform>(), 0.12f, 0.48f, 0.32f, 0.62f);
+            Button volUp = UiFactory.MakeButton("VolUp", box.transform, "+", 40, new Color(0.30f, 0.60f, 0.45f), null);
+            volUp.onClick.AddListener(() => { Sfx.SetVolume(Sfx.Volume + 0.1f); volLabel.text = VolumeLabel(); Sfx.Play(Sfx.Kind.Click); });
+            UiFactory.Stretch(volUp.GetComponent<RectTransform>(), 0.68f, 0.48f, 0.88f, 0.62f);
+
+            Button close = UiFactory.MakeButton("SettingsClose", box.transform, pausing ? "계속하기" : "닫기", 36, new Color(0.30f, 0.60f, 0.45f), CloseSettings);
+            UiFactory.Stretch(close.GetComponent<RectTransform>(), 0.12f, 0.28f, 0.88f, 0.42f);
+
+            // 시작 화면으로 나가기는 영업 중이 아닐 때만 (아침, 저녁에만)
+            if (!titleUp && phase != Phase.Business)
+            {
+                Button toTitleBtn = UiFactory.MakeButton("SettingsToTitle", box.transform, "시작 화면으로", 28, new Color(0.40f, 0.45f, 0.55f), () => { CloseSettings(); ShowTitle(); });
+                UiFactory.Stretch(toTitleBtn.GetComponent<RectTransform>(), 0.12f, 0.10f, 0.88f, 0.22f);
+            }
+            else if (pausing)
+            {
+                Text note = UiFactory.Label("SettingsNote", box.transform, "영업 중에는 시간이 멈춰요", 24, new Color(0.45f, 0.42f, 0.40f), TextAnchor.MiddleCenter);
+                UiFactory.Stretch(note.rectTransform, 0.05f, 0.10f, 0.95f, 0.22f);
+            }
+        }
+
+        void CloseSettings()
+        {
+            if (settingsPanel != null) Destroy(settingsPanel.gameObject);
+            settingsPanel = null;
+            Time.timeScale = 1f;
+        }
+
+        string VolumeLabel() { return "음량 " + Mathf.RoundToInt(Sfx.Volume * 100f) + "%"; }
+
         string SoundLabel() { return Sfx.Muted ? "소리 꺼짐" : "소리 켜짐"; }
 
         // ---------- 공통: 포인트 ----------
