@@ -3,13 +3,16 @@ namespace SalonIntern
     // 하루 구조 수치. 기획서 2장 기준이며 모두 시작점이라 테스트하며 조정한다.
     public static class DayConfig
     {
-        // 영업 시간의 현실 길이(초). 480초 = 8분.
+        // 영업 시간의 현실 길이(초). 240초 = 4분.
         // 테스트할 때는 60 정도로 줄이면 하루가 금방 끝나서 확인하기 편하다.
-        public const float BusinessSeconds = 480f;
+        public const float BusinessSeconds = 240f;
 
         // 영업 시간 (분 단위): 10:00 ~ 18:00
         public const int OpenMinutes = 10 * 60;
         public const int CloseMinutes = 18 * 60;
+
+        // 현실 1초 동안 흐르는 게임 속 분 (240초 동안 480분 -> 2분)
+        public const float MinutesPerSecond = (CloseMinutes - OpenMinutes) / BusinessSeconds;
 
         // 아침 예약표: 10시부터 1시간 단위로 8칸(10~17시), 칸마다 예약이 있을 확률
         public const int ReservationSlots = 8;

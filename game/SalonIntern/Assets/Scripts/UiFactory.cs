@@ -23,6 +23,38 @@ namespace SalonIntern
             return font;
         }
 
+        static Sprite circleSprite;
+
+        // 동그라미 모양 이미지 (도형 캐릭터용)
+        public static Sprite CircleSprite()
+        {
+            if (circleSprite == null)
+            {
+                int n = 64;
+                Texture2D tex = new Texture2D(n, n, TextureFormat.RGBA32, false);
+                float r = n / 2f;
+                for (int y = 0; y < n; y++)
+                {
+                    for (int x = 0; x < n; x++)
+                    {
+                        float d = Vector2.Distance(new Vector2(x + 0.5f, y + 0.5f), new Vector2(r, r));
+                        tex.SetPixel(x, y, new Color(1f, 1f, 1f, Mathf.Clamp01(r - d)));
+                    }
+                }
+                tex.wrapMode = TextureWrapMode.Clamp;
+                tex.Apply();
+                circleSprite = Sprite.Create(tex, new Rect(0, 0, n, n), new Vector2(0.5f, 0.5f), 100f);
+            }
+            return circleSprite;
+        }
+
+        public static Image Circle(string name, Transform parent, Color color)
+        {
+            Image img = Panel(name, parent, color);
+            img.sprite = CircleSprite();
+            return img;
+        }
+
         public static RectTransform Rect(string name, Transform parent)
         {
             GameObject go = new GameObject(name, typeof(RectTransform));
