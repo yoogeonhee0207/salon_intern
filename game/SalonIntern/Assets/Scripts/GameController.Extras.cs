@@ -13,6 +13,8 @@ namespace SalonIntern
         const bool ExtrasTest = false;
         bool testGiftGiven, gradPreviewShown;
 
+        string SoundLabel() { return Sfx.Muted ? "소리 꺼짐" : "소리 켜짐"; }
+
         // ---------- 공통: 포인트 ----------
 
         int totalPointsEarned;
@@ -295,6 +297,7 @@ namespace SalonIntern
         {
             if (achieveQueue.Count == 0 || toastPanel == null || toastTimer > 0f || phase != Phase.Business) return;
             Toast(achieveQueue[0], true);
+            Sfx.Play(Sfx.Kind.Coin);
             achieveQueue.RemoveAt(0);
         }
 
@@ -366,6 +369,7 @@ namespace SalonIntern
         string OnDayEnd(string grade, int dayScore, int target, int dayMissedNow)
         {
             string text = "";
+            Sfx.Play(Sfx.Kind.Fanfare);
             daysPlayed++;
             if (grade == "S") perfectDays++;
 
@@ -404,6 +408,7 @@ namespace SalonIntern
         void OnMorningStart()
         {
             RollDailyGoal();
+            RefreshChairs();
             if (ExtrasTest && !testGiftGiven)
             {
                 testGiftGiven = true;
@@ -413,6 +418,229 @@ namespace SalonIntern
             ApplyLook();
             CheckAchievements();
             if (designers != null && designers.Length > 0 && !TourDay) CheckDesignerEvents();
+        }
+
+        // ---------- 시술석 의자 ----------
+
+        // 시술석에는 의자가 있고 의자 하나에 손님 한 명만 앉는다. 레벨이 오르면 의자가 늘어난다.
+        const int MaxChairs = 3;
+        static readonly float[] ChairY = { 30f, -55f, -140f };
+        readonly Request[] chairOwner = new Request[MaxChairs];
+        readonly Image[] chairImages = new Image[MaxChairs];
+        readonly Text[] chairTexts = new Text[MaxChairs];
+        Request chairWaiter;   // 의자가 나기를 기다리는 손님의 요청
+
+        int ChairCount { get { return level >= 3 ? 3 : 2; } }
+
+        Vector2 ChairPos(int i) { return new Vector2(775f, ChairY[Mathf.Clamp(i, 0, MaxChairs - 1)]); }
+
+        int FreeChairs()
+        {
+            int n = 0;
+            for (int i = 0; i < ChairCount; i++) if (chairOwner[i] == null) n++;
+            return n;
+        }
+
+        // 이 요청의 idx번째 단계가 시술석이면 의자를 잡는다. 시술석이 아니거나 이미 앉았으면 true
+        bool ReserveFor(Request r, int idx)
+        {
+            if (r.route == null || StepStation[r.route[idx]] != 1) return true;
+            if (r.chair >= 0) return true;
+            for (int i = 0; i < ChairCount; i++)
+            {
+                if (chairOwner[i] != null) continue;
+                chairOwner[i] = r;
+                r.chair = i;
+                RefreshChairs();
+                return true;
+            }
+            return false;
+        }
+
+        void ReleaseChair(Request r)
+        {
+            if (r == null || r.chair < 0) return;
+            if (r.chair < MaxChairs && chairOwner[r.chair] == r) chairOwner[r.chair] = null;
+            r.chair = -1;
+            RefreshChairs();
+        }
+
+        void ResetChairs()
+        {
+            for (int i = 0; i < MaxChairs; i++) chairOwner[i] = null;
+            foreach (Request q in active) q.chair = -1;
+            chairWaiter = null;
+            RefreshChairs();
+        }
+
+        void BuildChairs()
+        {
+            for (int i = 0; i < MaxChairs; i++)
+            {
+                Image c = UiFactory.Panel("Chair" + i, mapArea, new Color(0.95f, 0.85f, 0.70f));
+                PlaceCenter(c.rectTransform, ChairPos(i), new Vector2(200f, 70f));
+                chairImages[i] = c;
+                chairTexts[i] = UiFactory.Label("Text", c.transform, "", 22, TextDark, TextAnchor.MiddleCenter);
+            }
+            RefreshChairs();
+        }
+
+        void RefreshChairs()
+        {
+            for (int i = 0; i < MaxChairs; i++)
+            {
+                if (chairImages[i] == null) continue;
+                bool open = i < ChairCount;
+                bool taken = open && chairOwner[i] != null;
+                chairImages[i].color = !open ? new Color(0.80f, 0.80f, 0.82f) : (taken ? new Color(0.78f, 0.55f, 0.38f) : new Color(0.97f, 0.90f, 0.78f));
+                chairTexts[i].text = !open ? "의자 (Lv.3~)" : (taken ? "손님이 앉아 있어요" : "빈 의자");
+            }
+        }
+
+        // 의자가 날 때까지 기다리던 손님을 자리가 나면 데려간다
+        void UpdateChairWait()
+        {
+            if (chairWaiter == null || phase != Phase.Business || minigameActive) return;
+            Request task = chairWaiter;
+            if (!active.Contains(task) || playerTask != task) { chairWaiter = null; return; }
+            if (!ReserveFor(task, task.routeIdx)) return;
+            chairWaiter = null;
+            playerTarget = StepPos(task, task.routeIdx);
+            playerWalking = true;
+            Say("의자가 비었어요! " + StepNames[task.route[task.routeIdx]] + "하러 모셔요");
+        }
+
+        // ---------- 시술 중 대기 (염색약이 작용하는 시간 등) ----------
+
+        // 단계를 끝낸 뒤 손님이 의자에 앉아서 기다리는 시간 (게임 속 분). 샴푸 0, 펌 1, 염색 2, 드라이 3, 커트 4, 탈색 5
+        static readonly int[] StepWaitMin = { 0, 20, 15, 0, 0, 20 };
+
+        float SecPerMinute { get { return DayConfig.BusinessSeconds / (float)(DayConfig.CloseMinutes - DayConfig.OpenMinutes); } }
+
+        void BeginProcessing(Request task, int step)
+        {
+            int wait = StepWaitMin[step];
+            task.processing = true;
+            task.ready = false;
+            task.procTotal = wait * SecPerMinute;
+            task.procEnd = businessElapsed + task.procTotal;
+            if (customerRt != null) { task.seated = customerRt; customerRt = null; }
+            carrying = false;
+            customerReturning = false;
+            playerTask = null;
+            playerWalking = false;
+            waitingAtStation = false;
+            task.background.color = new Color(0.80f, 0.88f, 0.98f);
+            Say(StepNames[step] + " 약이 작용하는 중이에요 (" + wait + "분). 그동안 다른 일을 해요!");
+        }
+
+        void UpdateProcessing()
+        {
+            for (int i = 0; i < active.Count; i++)
+            {
+                Request r = active[i];
+                if (!r.processing) continue;
+                float left = r.procEnd - businessElapsed;
+                int step = r.route[r.routeIdx - 1];
+                if (left <= 0f)
+                {
+                    r.processing = false;
+                    r.ready = true;
+                    r.bodyText.text = r.titleBase + "\n✔ 대기 끝!";
+                    r.background.color = new Color(0.78f, 0.93f, 0.78f);
+                    r.barFill.anchorMax = new Vector2(1f, 1f);
+                    r.barFillImage.color = BarGreen;
+                    Toast("✔ " + r.designer.name + " 선생님 손님의 " + StepNames[step] + " 대기가 끝났어요! 모시러 가요", true);
+                    continue;
+                }
+                int leftMin = Mathf.CeilToInt(left / SecPerMinute);
+                r.bodyText.text = r.titleBase + "\n⏱ " + StepNames[step] + " " + leftMin + "분";
+                r.barFill.anchorMax = new Vector2(Mathf.Clamp01(1f - left / r.procTotal), 1f);
+                r.barFillImage.color = new Color(0.35f, 0.60f, 0.90f);
+            }
+        }
+
+        // 손님 머리 위에 남은 시간을 보여주는 작은 표시
+        void AddHeadLabel(RectTransform customer)
+        {
+            Image tag = UiFactory.Panel("Head", customer, new Color(1f, 1f, 1f, 0.9f));
+            tag.raycastTarget = false;
+            RectTransform rt = tag.rectTransform;
+            rt.anchorMin = new Vector2(0.5f, 0.5f);
+            rt.anchorMax = new Vector2(0.5f, 0.5f);
+            rt.pivot = new Vector2(0.5f, 0.5f);
+            rt.anchoredPosition = new Vector2(0f, 46f);
+            rt.sizeDelta = new Vector2(120f, 30f);
+            Text t = UiFactory.Label("HeadText", tag.transform, "", 20, TextDark, TextAnchor.MiddleCenter);
+            t.raycastTarget = false;
+            tag.gameObject.SetActive(false);
+        }
+
+        void SetHeadLabel(RectTransform customer, string text, Color color)
+        {
+            if (customer == null) return;
+            Transform tag = customer.Find("Head");
+            if (tag == null) return;
+            bool show = !string.IsNullOrEmpty(text);
+            tag.gameObject.SetActive(show);
+            if (!show) return;
+            Text t = tag.GetComponentInChildren<Text>();
+            t.text = text;
+            t.color = color;
+        }
+
+        void UpdateHeadLabels()
+        {
+            Color dark = new Color(0.15f, 0.15f, 0.18f);
+            Color red = new Color(0.80f, 0.15f, 0.15f);
+            Color blue = new Color(0.15f, 0.35f, 0.75f);
+
+            // 데리고 다니는 손님: 요청 제한시간(초)
+            if (customerRt != null && carrying)
+            {
+                Request t = playerTask;
+                if (t != null && active.Contains(t))
+                {
+                    int sec = Mathf.CeilToInt(Mathf.Max(0f, t.remaining));
+                    SetHeadLabel(customerRt, "남은 " + sec + "초", sec <= 10 ? red : dark);
+                }
+                else SetHeadLabel(customerRt, "", dark);
+            }
+
+            // 의자에 앉은 손님: 약이 작용하는 남은 분
+            foreach (Request r in active)
+            {
+                if (r.seated == null) continue;
+                if (r.processing)
+                {
+                    int left = Mathf.CeilToInt((r.procEnd - businessElapsed) / SecPerMinute);
+                    SetHeadLabel(r.seated, "⏱ " + Mathf.Max(0, left) + "분", blue);
+                }
+                else if (r.ready) SetHeadLabel(r.seated, "대기 끝!", new Color(0.10f, 0.50f, 0.20f));
+                else SetHeadLabel(r.seated, "", dark);
+            }
+        }
+
+        // 의자에 도착해서 앉은 손님을 데리고 다음 단계로 간다
+        void FinishPickup(Request task)
+        {
+            task.pickup = false;
+            task.ready = false;
+            task.bodyText.text = task.titleBase;
+            task.background.color = task.baseColor;
+            if (StepStation[task.route[task.routeIdx]] != 1) ReleaseChair(task);
+            if (task.seated != null) { customerRt = task.seated; task.seated = null; carrying = true; }
+            else PickUpCustomer();
+            ReserveFor(task, task.routeIdx);
+            playerTarget = StepPos(task, task.routeIdx);
+            playerWalking = true;
+            Say("다음은 " + StepNames[task.route[task.routeIdx]]);
+        }
+
+        void DestroySeated(Request r)
+        {
+            if (r != null && r.seated != null) Destroy(r.seated.gameObject);
+            if (r != null) r.seated = null;
         }
 
         // ---------- 상점 확장: 유니폼, 인테리어, 간식 ----------

@@ -22,6 +22,15 @@ namespace SalonIntern
             public int procIdx = -1; // 시술 번호 (0 샴푸 ~ 3 드라이)
             public int[] route;      // 시술 단계 순서 (예: 펌 = 샴푸, 커트, 펌, 샴푸, 드라이)
             public int routeIdx;     // 지금 진행 중인 단계 번호
+            public int chair = -1; // 앉아 있는 시술석 의자 번호
+            public bool processing;  // 약이 작용하는 대기 중 (손님은 의자에 앉아 있음)
+            public bool ready;       // 대기가 끝나서 손님을 모시러 갈 수 있음
+            public bool pickup;      // 의자로 손님을 모시러 가는 중
+            public float procEnd, procTotal;
+            public RectTransform seated; // 의자에 앉아 있는 손님 모양
+            public Text bodyText;
+            public Color baseColor;
+            public string titleBase;
             public string customerName; public int customerType; public string customerLine; public bool isInspector;
             public bool started;     // 손님을 모시고 출발했는지
             public int satSum;       // 단계별 완성도(0~100) 합: 손님 만족도 계산용
@@ -53,9 +62,9 @@ namespace SalonIntern
         bool restWalking;        // 휴게실로 걸어가는 중
         const float PlayerSpeed = 1200f;
 
-        // 시술 구역: 0 샴푸실, 1 시술석, (커트석은 Lv.5부터 쓸 예정이라 지금은 모양만)
-        static readonly Vector2[] StationPos = { new Vector2(775f, 215f), new Vector2(775f, 0f), new Vector2(775f, -215f) };
-        static readonly string[] StationNames = { "샴푸실", "시술석", "커트석" };
+        // 시술 구역: 0 샴푸실, 1 시술석 (커트와 드라이는 선생님 자리에서 한다)
+        static readonly Vector2[] StationPos = { new Vector2(775f, 215f), new Vector2(775f, -40f) };
+        static readonly string[] StationNames = { "샴푸실", "시술석" };
         RectTransform customerRt;      // 인턴이 데리고 다니는 손님
         bool waitingAtStation;         // 디자이너가 커트하는 동안 기다리는 중
         float stationWait;
@@ -153,6 +162,7 @@ namespace SalonIntern
         {
             designers = DesignerLoader.Load();
             BuildUi();
+            Sfx.StartBgm();
 
             if (designers.Length == 0)
             {
@@ -169,6 +179,9 @@ namespace SalonIntern
             UpdateToast();
             UpdateSaveText();
             FlushAchieveToast();
+            UpdateChairWait();
+            UpdateProcessing();
+            UpdateHeadLabels();
             if (phase != Phase.Business) return;
             if (minigameActive) return;
 
@@ -225,6 +238,7 @@ namespace SalonIntern
             for (int i = active.Count - 1; i >= 0; i--)
             {
                 Request r = active[i];
+                if (r.processing) continue; // 약이 작용하는 동안은 제한시간이 멈춘다
                 r.remaining -= Time.deltaTime;
 
                 float ratio = Mathf.Clamp01(r.remaining / r.timeLimit);
@@ -259,7 +273,7 @@ namespace SalonIntern
         bool IsIdle()
         {
             if (resting || restWalking || refilling || supplyWalking || playerWalking || waitingAtStation || playerTask != null) return false;
-            foreach (Request r in active) if (!r.isMess) return false;
+            foreach (Request r in active) if (!r.isMess && !r.processing) return false;
             return true;
         }
 
@@ -342,8 +356,9 @@ namespace SalonIntern
             phase = Phase.Evening;
 
             // 남은 요청은 디자이너들이 알아서 마무리한 것으로 처리 (감점 없음)
-            foreach (Request r in active) Destroy(r.background.gameObject);
+            foreach (Request r in active) { DestroySeated(r); Destroy(r.background.gameObject); }
             active.Clear();
+            ResetChairs();
             waitingBookings.Clear();
             playerTask = null;
             playerWalking = false;
@@ -607,6 +622,10 @@ namespace SalonIntern
                 Button start = UiFactory.MakeButton("Start", titlePanel, "시작하기", 44, new Color(0.30f, 0.60f, 0.45f), () => StartFromTitle(false));
                 UiFactory.Stretch(start.GetComponent<RectTransform>(), 0.34f, 0.24f, 0.66f, 0.38f);
             }
+
+            Button snd = UiFactory.MakeButton("Sound", titlePanel, SoundLabel(), 24, new Color(0.40f, 0.45f, 0.55f), null);
+            snd.onClick.AddListener(() => { Sfx.Toggle(); snd.GetComponentInChildren<Text>().text = SoundLabel(); });
+            UiFactory.Stretch(snd.GetComponent<RectTransform>(), 0.02f, 0.03f, 0.16f, 0.09f);
 
             Text ver = UiFactory.Label("Version", titlePanel, "프로토타입 v0.5", 22, new Color(0.60f, 0.64f, 0.75f), TextAnchor.LowerRight);
             UiFactory.Stretch(ver.rectTransform, 0.60f, 0.01f, 0.99f, 0.07f);
@@ -1278,6 +1297,7 @@ namespace SalonIntern
             for (int i = active.Count - 1; i >= 0; i--)
             {
                 Request r = active[i];
+                if (r.processing) continue;
                 r.remaining -= sec;
                 if (r.remaining <= 0f) Expire(r);
             }
@@ -1460,8 +1480,8 @@ namespace SalonIntern
             return LevelConfig.ProcedureNames[p];
         }
 
-        // 커트 손님이 가고 나면 커트석 바닥에 머리카락이 쌓인다
-        void SpawnFloorMess()
+        // 커트 손님이 가고 나면 그 선생님 자리 앞 바닥에 머리카락이 쌓인다
+        void SpawnFloorMess(DesignerData at)
         {
             foreach (Request q in active) if (q.isMess) return; // 이미 있으면 하나만
 
@@ -1472,7 +1492,7 @@ namespace SalonIntern
                 isProcedure = false,
                 isMess = true,
                 useAnchor = true,
-                anchor = StationPos[2],
+                anchor = MessPos(at),
                 station = -1,
                 procIdx = -1,
                 timeLimit = 45f,
@@ -1481,6 +1501,12 @@ namespace SalonIntern
             CreateCard(m);
             active.Add(m);
             Say("커트 손님이 가고 나서 바닥에 머리카락이 가득해요! 쓸어주세요.");
+        }
+
+        Vector2 MessPos(DesignerData d)
+        {
+            Vector2 seat = SeatPos(d);
+            return new Vector2(seat.x, seat.y > 0f ? 100f : -100f);
         }
 
         bool HasRequest(DesignerData d)
@@ -1519,6 +1545,16 @@ namespace SalonIntern
         {
             if (phase != Phase.Business || minigameActive || waitingAtStation) return;
             if (!active.Contains(r)) return;
+            if (r.processing)
+            {
+                Toast("⏱ " + StepNames[r.route[r.routeIdx - 1]] + " 약이 작용하는 중이에요. 다른 일을 먼저 해요", true);
+                return;
+            }
+            if (!r.isMess && r.route != null && r.chair < 0 && !(carrying && playerTask == r) && StepStation[r.route[0]] == 1 && FreeChairs() == 0)
+            {
+                Toast("시술석 의자가 모두 차 있어요! 다른 요청을 먼저 해요", false);
+                return;
+            }
 
             if (resting) Say("쉬다 말고 일하러 가요!");
             resting = false;
@@ -1528,13 +1564,27 @@ namespace SalonIntern
             if (carrying && playerTask != r)
             {
                 if (playerTask.route != null) { playerTask.routeIdx = 0; playerTask.started = false; }
+                ReleaseChair(playerTask);
+                if (chairWaiter == playerTask) chairWaiter = null;
                 SendCustomerBack(SeatPos(playerTask.designer));
             }
             if (carrying && playerTask == r)
             {
                 // 이미 손님을 데리고 있으면 바로 구역으로
+                chairWaiter = null;
+                if (!ReserveFor(r, r.routeIdx)) { chairWaiter = r; Toast("시술석 의자가 모두 차 있어요! 자리가 날 때까지 기다려요", false); return; }
                 playerTarget = StepPos(r, r.routeIdx);
                 playerWalking = true;
+                return;
+            }
+            if (r.ready)
+            {
+                // 대기가 끝났으니 의자에 앉은 손님을 모시러 간다
+                playerTask = r;
+                r.pickup = true;
+                playerTarget = ChairPos(r.chair);
+                playerWalking = true;
+                Say("손님을 모시러 의자로 가요");
                 return;
             }
             playerTask = r;
@@ -1572,6 +1622,11 @@ namespace SalonIntern
             Request task = playerTask;
             if (task != null && active.Contains(task) && task.route != null)
             {
+                if (task.pickup)
+                {
+                    FinishPickup(task);
+                    return;
+                }
                 if (!task.started)
                 {
                     task.started = true;
@@ -1579,6 +1634,13 @@ namespace SalonIntern
                     if (StepStation[task.route[0]] >= 0)
                     {
                         // 디자이너 자리에서 손님을 모시고 첫 단계 구역으로 출발
+                        if (!ReserveFor(task, 0))
+                        {
+                            task.started = false;
+                            playerTask = null;
+                            Toast("시술석 의자가 모두 차 있어요! 다른 요청을 먼저 해요", false);
+                            return;
+                        }
                         PickUpCustomer();
                         playerTarget = StepPos(task, 0);
                         playerWalking = true;
@@ -1598,7 +1660,7 @@ namespace SalonIntern
 
         // 시술 단계: 0 샴푸, 1 펌, 2 염색, 3 드라이, 4 커트
         static readonly string[] StepNames = { "샴푸", "펌", "염색", "드라이", "커트", "탈색" };
-        static readonly int[] StepStation = { 0, 1, 1, -1, 2, 1 };      // 구역 (-1은 디자이너 자리)
+        static readonly int[] StepStation = { 0, 1, 1, -1, -1, 1 };      // 구역 (-1은 디자이너 자리)
         static readonly int[] StepUnlock = { 1, 2, 3, 4, 5, 3 };        // 인턴이 직접 할 수 있는 레벨
         // 단계를 끝내면 줄어드는 재료: 수건0 도구1 음료2 청소용품3
         static readonly int[][] StepUses = { new[] { 0 }, new[] { 1, 2 }, new[] { 1 }, new[] { 0, 3 }, new[] { 1 }, new[] { 1 } };
@@ -1621,6 +1683,7 @@ namespace SalonIntern
         Vector2 StepPos(Request r, int idx)
         {
             int st = StepStation[r.route[idx]];
+            if (st == 1 && r.chair >= 0) return ChairPos(r.chair);
             if (st >= 0) return StationPos[st];
             Vector2 seat = SeatPos(r.designer);
             return new Vector2(seat.x, seat.y > 0f ? 55f : -55f);
@@ -1689,7 +1752,7 @@ namespace SalonIntern
             task.satSum += pct;
             task.satCount++;
             ConsumeStep(step);
-            if (step == 4) SpawnFloorMess(); // 커트 뒤에는 바닥에 머리카락이 남는다
+            if (step == 4) SpawnFloorMess(task.designer); // 커트 뒤에는 바닥에 머리카락이 남는다
 
             task.routeIdx++;
             if (task.routeIdx >= task.route.Length)
@@ -1700,6 +1763,18 @@ namespace SalonIntern
                 return;
             }
 
+            if (StepWaitMin[step] > 0)
+            {
+                BeginProcessing(task, step); // 약이 작용하는 동안 손님은 의자에 앉아서 기다린다
+                return;
+            }
+            if (StepStation[step] == 1) ReleaseChair(task);
+            if (!ReserveFor(task, task.routeIdx))
+            {
+                chairWaiter = task;
+                Toast("시술석 의자가 모두 차 있어요! 자리가 날 때까지 기다려요", false);
+                return;
+            }
             playerTarget = StepPos(task, task.routeIdx);
             playerWalking = true;
             Say(StepNames[step] + " 끝! 다음은 " + StepNames[task.route[task.routeIdx]]);
@@ -1712,8 +1787,7 @@ namespace SalonIntern
                 case 0: return 0;      // 샴푸 -> 샴푸실
                 case 1: return 1;      // 펌 -> 시술석
                 case 2: return 1;      // 염색 -> 시술석
-                case 4: return 2;      // 커트 -> 커트석
-                default: return -1;    // 드라이 -> 자리에서
+                default: return -1;    // 커트, 드라이 -> 선생님 자리에서
             }
         }
 
@@ -1724,6 +1798,7 @@ namespace SalonIntern
             customerRt = c.rectTransform;
             PlaceCenter(customerRt, playerRt.anchoredPosition + new Vector2(-48f, 0f), new Vector2(52f, 52f));
             UiFactory.Label("CustomerText", c.transform, "손님", 18, TextDark, TextAnchor.MiddleCenter);
+            AddHeadLabel(customerRt);
             carrying = true;
             customerReturning = false;
         }
@@ -1808,7 +1883,7 @@ namespace SalonIntern
             "시술석에서 빗질로 머리를 정리하고, 파지로 머리를 나눠 롯드를 말고 고무줄로 고정해요. 롯드는 단단하고 고르게 말아야 해요.",
             "시술석에서 염색약을 배합해 뿌리부터 발라요. 시간을 지켜서 방치해야 색이 고르게 나와요.",
             "디자이너 자리에서 드라이로 말려 모양을 잡아요. 뿌리부터 말리고 끝을 마무리해요.",
-            "커트석에서 디자이너가 커트해요. 끝나면 바닥에 머리카락이 남으니 바로 쓸어야 해요.",
+            "선생님 자리에서 선생님이 커트해요. 끝나면 바닥에 머리카락이 남으니 바로 쓸어야 해요.",
             "시술석에서 탈색제를 발라 색을 빼요. 두피에 닿지 않게 조심하고 시간을 꼭 지켜요.",
         };
 
@@ -1979,6 +2054,9 @@ namespace SalonIntern
                 waitingAtStation = false;
                 if (carrying) SendCustomerBack(SeatPos(r.designer));
             }
+            ReleaseChair(r);
+            DestroySeated(r);
+            if (chairWaiter == r) chairWaiter = null;
             active.Remove(r);
             Destroy(r.background.gameObject);
         }
@@ -2160,6 +2238,7 @@ namespace SalonIntern
             level = Mathf.Clamp(level + delta, 0, LevelConfig.MaxLevel);
             xp = 0;
             Say("[테스트] Lv." + level + " " + LevelConfig.Names[level] + " 로 변경");
+            RefreshChairs();
             RefreshTop();
         }
 
@@ -2276,6 +2355,10 @@ namespace SalonIntern
             UiFactory.Stretch(shopButton.GetComponent<RectTransform>(), 0.02f, 0.945f, 0.20f, 0.99f);
             shopButtonText = shopButton.GetComponentInChildren<Text>();
 
+            Button soundButton = UiFactory.MakeButton("SoundButton", morningPanel, SoundLabel(), 24, new Color(0.40f, 0.50f, 0.45f), null);
+            soundButton.onClick.AddListener(() => { Sfx.Toggle(); soundButton.GetComponentInChildren<Text>().text = SoundLabel(); });
+            UiFactory.Stretch(soundButton.GetComponent<RectTransform>(), 0.40f, 0.945f, 0.60f, 0.99f);
+
             Button achButton = UiFactory.MakeButton("AchButton", morningPanel, "업적", 24, new Color(0.60f, 0.50f, 0.30f), OpenAchievements);
             UiFactory.Stretch(achButton.GetComponent<RectTransform>(), 0.22f, 0.945f, 0.38f, 0.99f);
 
@@ -2341,6 +2424,7 @@ namespace SalonIntern
             if (toastPanel == null) return;
             toastText.text = message;
             toastPanel.color = good ? ToastGood : ToastBad;
+            Sfx.Play(good ? Sfx.Kind.Good : Sfx.Kind.Bad);
             toastPanel.gameObject.SetActive(true);
             toastTimer = 2.4f;
         }
@@ -2399,20 +2483,21 @@ namespace SalonIntern
             supplyRoomText.rectTransform.offsetMin = new Vector2(0f, 6f);
             supplyRoomText.rectTransform.offsetMax = new Vector2(0f, -40f);
 
-            // 시술 구역 (오른쪽): 샴푸실 / 시술석 / 커트석
-            string[] zoneNames = { "샴푸실", "시술석", "커트석 (Lv.5~)" };
+            // 시술 구역 (오른쪽): 샴푸실 / 시술석 (커트와 드라이는 선생님 자리)
+            string[] zoneNames = { "샴푸실", "시술석" };
             Color[] zoneColors =
             {
-                new Color(0.70f, 0.85f, 1.00f), new Color(1.00f, 0.88f, 0.75f), new Color(0.80f, 0.80f, 0.82f)
+                new Color(0.70f, 0.85f, 1.00f), new Color(1.00f, 0.88f, 0.75f)
             };
-            float[] zoneY = { 215f, 0f, -215f };
-            for (int z = 0; z < 3; z++)
+            float[] zoneY = { 215f, -40f };
+            for (int z = 0; z < 2; z++)
             {
                 Image zone = UiFactory.Panel("Zone_" + zoneNames[z], mapArea, zoneColors[z]);
-                PlaceCenter(zone.rectTransform, new Vector2(775f, zoneY[z]), new Vector2(240f, 190f));
+                PlaceCenter(zone.rectTransform, new Vector2(775f, zoneY[z]), new Vector2(240f, z == 1 ? 300f : 190f));
                 Text zt = UiFactory.Label("ZoneText", zone.transform, zoneNames[z], 26, TextDark, TextAnchor.UpperCenter);
                 zt.rectTransform.offsetMax = new Vector2(0f, -6f);
             }
+            BuildChairs();
 
             // 디자이너 자리: 위 6명, 아래 6명
             for (int i = 0; i < designers.Length; i++)
@@ -2456,6 +2541,7 @@ namespace SalonIntern
             if (r.isMess) baseColor = new Color(0.90f, 0.82f, 0.70f);
             Image bg = UiFactory.Panel("Bubble_" + r.designer.name, mapArea, baseColor);
             r.background = bg;
+            r.baseColor = baseColor;
             PlaceCenter(bg.rectTransform, r.useAnchor ? r.anchor : new Vector2(seat.x, seat.y + dir * 112f), new Vector2(190f, 130f));
 
             Button button = bg.gameObject.AddComponent<Button>();
@@ -2467,6 +2553,8 @@ namespace SalonIntern
             else if (r.isReserved) title = "예약 " + title;
             Text body = UiFactory.Label("Body", bg.transform, title, 24, TextDark, TextAnchor.MiddleCenter);
             UiFactory.Stretch(body.rectTransform, 0.04f, 0.28f, 0.96f, 0.98f);
+            r.bodyText = body;
+            r.titleBase = title;
 
             Image barBg = UiFactory.Panel("BarBg", bg.transform, new Color(0.25f, 0.25f, 0.30f));
             UiFactory.Stretch(barBg.rectTransform, 0.06f, 0.08f, 0.94f, 0.22f);

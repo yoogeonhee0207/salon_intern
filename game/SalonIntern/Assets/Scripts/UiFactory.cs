@@ -99,7 +99,7 @@ namespace SalonIntern
             Image img = Panel(name, parent, bg);
             Button button = img.gameObject.AddComponent<Button>();
             button.targetGraphic = img;
-            button.onClick.AddListener(() => onClick());
+            button.onClick.AddListener(() => { Sfx.Play(Sfx.Kind.Click); if (onClick != null) onClick(); });
             Label("Text", img.transform, content, size, Color.white, TextAnchor.MiddleCenter);
             return button;
         }

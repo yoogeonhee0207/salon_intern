@@ -131,6 +131,7 @@ namespace SalonIntern
                 feedbackText.text = needFaucet ? "지금은 수도꼭지를 눌러요!" : "지금은 샴푸를 눌러요!";
                 return;
             }
+            Sfx.Play(kind == 0 ? Sfx.Kind.Water : Sfx.Kind.Pop);
             StartStage(stage + 1);
         }
 

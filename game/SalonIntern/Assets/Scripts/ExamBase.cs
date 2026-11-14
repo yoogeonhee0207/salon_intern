@@ -171,6 +171,7 @@ namespace SalonIntern
             if (finished) return;
             finished = true;
             feedbackText.text = message;
+            Sfx.Play(passed ? Sfx.Kind.Good : Sfx.Kind.Bad);
             pending = new ExamResult { passed = passed, hits = hits, rounds = rounds, needed = needed };
             finishTimer = 1.3f;
         }

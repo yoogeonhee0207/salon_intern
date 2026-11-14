@@ -57,6 +57,7 @@ namespace SalonIntern
         void OnDown(Vector2 p)
         {
             if (finished) return;
+            Sfx.Play(Sfx.Kind.Snip);
             ClearTrail();
             if ((p - guide[0]).magnitude <= 90f)
             {
