@@ -40,6 +40,7 @@ namespace SalonIntern
         protected abstract string Rule { get; }
         protected abstract void Setup();
         protected virtual void Tick() { }
+        protected virtual float DimAlpha { get { return 0.97f; } }
 
         public static T Show<T>(RectTransform root, Action<ExamResult> onFinished) where T : ExamBase
         {
@@ -56,7 +57,7 @@ namespace SalonIntern
             self = (RectTransform)transform;
             UiFactory.Stretch(self, 0f, 0f, 1f, 1f);
 
-            Image dim = UiFactory.Panel("Dim", self, new Color(0.10f, 0.10f, 0.16f, 0.97f));
+            Image dim = UiFactory.Panel("Dim", self, new Color(0.10f, 0.10f, 0.16f, DimAlpha));
             UiFactory.Stretch(dim.rectTransform, 0f, 0f, 1f, 1f);
 
             Text title = UiFactory.Label("Title", self, Title, 48, Color.white, TextAnchor.MiddleCenter);

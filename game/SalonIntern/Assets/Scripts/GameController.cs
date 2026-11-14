@@ -23,6 +23,8 @@ namespace SalonIntern
             public int[] route;      // 시술 단계 순서 (예: 펌 = 샴푸, 커트, 펌, 샴푸, 드라이)
             public int routeIdx;     // 지금 진행 중인 단계 번호
             public bool started;     // 손님을 모시고 출발했는지
+            public int satSum;       // 단계별 완성도(0~100) 합: 손님 만족도 계산용
+            public int satCount;
             public bool isMess;      // 커트 뒤에 생긴 바닥 어지럼 (바닥 청소 미니게임)
             public bool useAnchor;   // 디자이너 자리가 아니라 anchor 위치에 말풍선을 띄운다
             public Vector2 anchor;
@@ -74,6 +76,7 @@ namespace SalonIntern
         int dayStartScore;
         int dayStartDone;
         int dayStartMissed;
+        int dayRequests; // 오늘 받은 시술 요청 수
 
         RectTransform morningPanel;
         RectTransform eveningPanel;
@@ -91,6 +94,14 @@ namespace SalonIntern
             public bool isVip;
         }
         List<Booking>[] bookingsBySlot;
+        // 오늘 같이 일할 선생님 고르기
+        const int PickMax = 3;
+        readonly List<DesignerData> picked = new List<DesignerData>();
+        int[,] resProc;
+        Vector2Int resVip;
+        Button morningStartButton;
+        Text morningNote;
+        Text morningStartText;
         readonly List<Booking> waitingBookings = new List<Booking>();
         int nextSlot;
 
@@ -158,7 +169,11 @@ namespace SalonIntern
             UpdateCutWait();
 
             // 영업 시계 흐르기
-            businessElapsed += Time.deltaTime;
+            float dt = Time.deltaTime;
+            bool idle = IsIdle();
+            if (idle) dt *= IdleSpeed; // 할 일이 없는 시간은 빨리 감기
+            if (idle != fastForward) { fastForward = idle; RefreshTop(); }
+            businessElapsed += dt;
             int minute = ClockMinutes();
             if (minute != lastClockMinute)
             {
@@ -171,9 +186,28 @@ namespace SalonIntern
                 return;
             }
 
-            // 예약 시간이 된 칸의 예약을 대기열에 넣고, 디자이너가 비면 카드로 만든다
-            ReleaseBookings(minute);
-            SpawnWaitingBookings();
+            // 오늘 목표 건수를 다 받았으면 새 요청은 받지 않고, 남은 요청이 끝나면 마감
+            bool quotaReached = dayRequests >= Quota();
+            if (quotaReached)
+            {
+                waitingBookings.Clear();
+                bool onlyMess = true;
+                foreach (Request q in active) if (!q.isMess) onlyMess = false;
+                if (onlyMess)
+                {
+                    EndBusiness();
+                    return;
+                }
+            }
+            else
+            {
+                // 예약 시간이 된 칸의 예약을 대기열에 넣고, 디자이너가 비면 카드로 만든다 (견학 날은 예약 없음)
+                if (!TourDay)
+                {
+                    ReleaseBookings(minute);
+                    SpawnWaitingBookings();
+                }
+            }
 
             // 제한시간 줄이기
             for (int i = active.Count - 1; i >= 0; i--)
@@ -189,9 +223,9 @@ namespace SalonIntern
             }
 
             // 빈 자리가 있으면 새 요청 만들기
-            if (active.Count < LevelConfig.MaxConcurrent[level])
+            if (!quotaReached && active.Count < LevelConfig.MaxConcurrent[level])
             {
-                spawnTimer -= Time.deltaTime;
+                spawnTimer -= dt;
                 if (spawnTimer <= 0f)
                 {
                     TrySpawn();
@@ -201,6 +235,21 @@ namespace SalonIntern
         }
 
         // ---------- 하루 흐름 ----------
+
+        // 첫날(Lv0)은 모든 시술 종류를 한 번씩 견학하는 날
+        bool TourDay { get { return day == 1 && level == 0; } }
+        int Quota() { return TourDay ? LevelConfig.ProcedureNames.Length : LevelConfig.DailyQuota[level]; }
+
+        const float IdleSpeed = 4f;
+        bool fastForward;
+
+        // 처리할 요청도 없고 하는 일도 없으면 시간이 빨리 흐른다
+        bool IsIdle()
+        {
+            if (resting || restWalking || refilling || supplyWalking || playerWalking || waitingAtStation || playerTask != null) return false;
+            foreach (Request r in active) if (!r.isMess) return false;
+            return true;
+        }
 
         int ClockMinutes()
         {
@@ -225,6 +274,10 @@ namespace SalonIntern
             lastClockMinute = -1;
 
             morningTitle.text = "Day " + day + "   아침 준비";
+            if (morningNote != null)
+                morningNote.text = TourDay
+                    ? "※ 첫날은 견학! 모든 시술을 한 번씩 보고 배워요.\n(예약 손님 없이 시술마다 견학 요청이 와요)"
+                    : "※ 오늘 같이 일할 선생님을 최대 3명 골라요.\n고른 선생님의 예약 손님만 와요. (VIP는 보너스)";
             UpdateMorningTexts();
             BuildReservationGrid();
 
@@ -236,6 +289,8 @@ namespace SalonIntern
 
         void StartBusiness()
         {
+            if (picked.Count == 0) return;
+            BuildBookings();
             phase = Phase.Business;
             businessElapsed = 0f;
             lastClockMinute = -1;
@@ -253,6 +308,7 @@ namespace SalonIntern
             dayStartScore = score;
             dayStartDone = done;
             dayStartMissed = missed;
+            dayRequests = 0;
 
             morningPanel.gameObject.SetActive(false);
             Say("영업 시작! 말풍선을 눌러 요청을 처리하세요.");
@@ -287,6 +343,26 @@ namespace SalonIntern
             int target = DayConfig.TargetScore(dayStartLevel);
             string grade = DayConfig.Grade(dayScore, target);
 
+            // 하루 보상: 함께 일한 선생님과 친분, S등급이면 XP 보너스
+            int friendGain = grade == "S" ? 6 : (grade == "A" ? 3 : (grade == "B" ? 1 : 0));
+            string rewardLine = "";
+            if (friendGain > 0 && picked.Count > 0)
+            {
+                string names = "";
+                foreach (DesignerData d in picked)
+                {
+                    AddCloseness(d, friendGain);
+                    names += (names.Length > 0 ? ", " : "") + d.name;
+                }
+                rewardLine += "보상  ♥ 친분 +" + friendGain + " (" + names + " 선생님)\n";
+            }
+            if (grade == "S")
+            {
+                AddXp(2);
+                rewardLine += "보상  XP +2 (S등급 보너스)\n";
+            }
+            if (rewardLine.Length == 0) rewardLine = "보상  없음 (B등급 이상이면 받아요)\n";
+
             string levelLine = level > dayStartLevel
                 ? "레벨 업!  Lv." + dayStartLevel + " → Lv." + level + " " + LevelConfig.Names[level]
                 : "Lv." + level + " " + LevelConfig.Names[level];
@@ -296,6 +372,7 @@ namespace SalonIntern
                 "오늘의 평가   " + grade + "\n\n"
                 + "오늘 점수   " + dayScore + "   (목표 " + target + ")\n"
                 + "완료 " + dayDone + "건     놓침 " + dayMissed + "건\n\n"
+                + rewardLine + "\n"
                 + levelLine + "     XP " + XpLabel() + "\n\n"
                 + DayConfig.Comment(grade)
                 + (CanTakeExamIgnoringDay() ? "\n\n승급시험을 볼 수 있어요! 내일 아침에 도전해 보세요." : "");
@@ -315,7 +392,7 @@ namespace SalonIntern
         static readonly Color[] ProcedureColors =
         {
             new Color(0.70f, 0.85f, 1.00f), // 샴푸
-            new Color(1.00f, 0.80f, 0.90f), // 롤
+            new Color(1.00f, 0.80f, 0.90f), // 펌
             new Color(1.00f, 0.85f, 0.65f), // 염색
             new Color(0.75f, 0.92f, 0.75f), // 드라이
             new Color(0.85f, 0.80f, 0.95f), // 커트
@@ -324,55 +401,79 @@ namespace SalonIntern
 
         void BuildReservationGrid()
         {
-            foreach (Transform child in reservationArea) Destroy(child.gameObject);
-
             int rows = designers.Length;
             int cols = DayConfig.ReservationSlots;
+            picked.Clear();
 
             // 예약 뽑기: 칸마다 확률로 예약이 생기고, 시술은 디자이너 확률표로 정한다
-            int[,] proc = new int[rows, cols];
+            resProc = new int[rows, cols];
             List<Vector2Int> booked = new List<Vector2Int>();
             for (int r = 0; r < rows; r++)
             {
                 for (int c = 0; c < cols; c++)
                 {
-                    proc[r, c] = -1;
+                    resProc[r, c] = -1;
                     if (Random.value < DayConfig.ReservationChance)
                     {
-                        proc[r, c] = PickProcedure(designers[r]);
+                        resProc[r, c] = PickProcedure(designers[r]);
                         booked.Add(new Vector2Int(r, c));
                     }
                 }
             }
             // 예약 중 하나는 VIP로 가려서 보여준다
-            Vector2Int vip = booked.Count > 0 ? booked[Random.Range(0, booked.Count)] : new Vector2Int(-1, -1);
+            resVip = booked.Count > 0 ? booked[Random.Range(0, booked.Count)] : new Vector2Int(-1, -1);
 
-            // 실제 영업에서 쓸 수 있게 시간 칸별로 저장
+            DrawReservationGrid();
+        }
+
+        // 고른 선생님들의 예약만 시간 칸별로 모아 영업에서 쓴다
+        void BuildBookings()
+        {
+            int rows = designers.Length;
+            int cols = DayConfig.ReservationSlots;
             bookingsBySlot = new List<Booking>[cols];
             for (int c = 0; c < cols; c++)
             {
                 bookingsBySlot[c] = new List<Booking>();
                 for (int r = 0; r < rows; r++)
                 {
-                    if (proc[r, c] < 0) continue;
+                    if (resProc[r, c] < 0 || !picked.Contains(designers[r])) continue;
                     bookingsBySlot[c].Add(new Booking
                     {
                         designer = designers[r],
-                        procedure = proc[r, c],
-                        isVip = (vip.x == r && vip.y == c),
+                        procedure = resProc[r, c],
+                        isVip = (resVip.x == r && resVip.y == c),
                     });
                 }
             }
+        }
+
+        void TogglePicked(int row)
+        {
+            DesignerData d = designers[row];
+            if (picked.Contains(d)) picked.Remove(d);
+            else if (picked.Count < PickMax) picked.Add(d);
+            else Say("선생님은 최대 " + PickMax + "명까지 고를 수 있어요.");
+            DrawReservationGrid();
+        }
+
+        void DrawReservationGrid()
+        {
+            foreach (Transform child in reservationArea) Destroy(child.gameObject);
+
+            int rows = designers.Length;
+            int cols = DayConfig.ReservationSlots;
 
             float nameW = 0.26f;
             float colW = (1f - nameW) / cols;
             float rowH = 1f / (rows + 1);
             Color headerBg = new Color(0.20f, 0.20f, 0.26f);
             Color nameBg = new Color(0.90f, 0.86f, 0.80f);
+            Color pickedBg = new Color(0.55f, 0.82f, 0.60f);
             Color emptyBg = new Color(1f, 1f, 1f, 0.85f);
 
             // 맨 윗줄: 시간
-            GridCell(0f, nameW, 0, rowH, "디자이너 / 시간", headerBg, Color.white, 22);
+            GridCell(0f, nameW, 0, rowH, "선생님 이름을 눌러 고르기", headerBg, Color.white, 20);
             for (int c = 0; c < cols; c++)
             {
                 string time = DayConfig.FormatClock(DayConfig.OpenMinutes + c * 60);
@@ -383,31 +484,45 @@ namespace SalonIntern
             for (int r = 0; r < rows; r++)
             {
                 DesignerData d = designers[r];
-                GridCell(0f, nameW, r + 1, rowH, d.name + " · " + d.specialty, nameBg, TextDark, 20);
+                bool isPicked = picked.Contains(d);
+                int row = r;
+                Image nameCell = GridCell(0f, nameW, r + 1, rowH, (isPicked ? "✔ " : "") + d.name + " · " + d.specialty + HeartText(d), isPicked ? pickedBg : nameBg, TextDark, 20);
+                Button nameButton = nameCell.gameObject.AddComponent<Button>();
+                nameButton.targetGraphic = nameCell;
+                nameButton.onClick.AddListener(() => TogglePicked(row));
 
                 for (int c = 0; c < cols; c++)
                 {
                     float x0 = nameW + c * colW;
                     float x1 = nameW + (c + 1) * colW;
+                    float dim = isPicked ? 1f : 0.55f; // 고르지 않은 선생님 줄은 흐리게
 
-                    if (proc[r, c] < 0)
+                    if (resProc[r, c] < 0)
                     {
-                        GridCell(x0, x1, r + 1, rowH, "", emptyBg, TextDark, 22);
+                        GridCell(x0, x1, r + 1, rowH, "", new Color(1f, 1f, 1f, 0.85f * dim), TextDark, 22);
                     }
-                    else if (vip.x == r && vip.y == c)
+                    else if (resVip.x == r && resVip.y == c)
                     {
-                        GridCell(x0, x1, r + 1, rowH, "VIP", new Color(0.95f, 0.80f, 0.35f), TextDark, 22);
+                        GridCell(x0, x1, r + 1, rowH, "VIP", Color.Lerp(emptyBg, new Color(0.95f, 0.80f, 0.35f), dim), TextDark, 22);
                     }
                     else
                     {
-                        GridCell(x0, x1, r + 1, rowH, LevelConfig.ProcedureShortNames[proc[r, c]],
-                            ProcedureColors[proc[r, c]], TextDark, 22);
+                        GridCell(x0, x1, r + 1, rowH, LevelConfig.ProcedureShortNames[resProc[r, c]],
+                            Color.Lerp(emptyBg, ProcedureColors[resProc[r, c]], dim), TextDark, 22);
                     }
                 }
             }
+            UpdateStartButton();
         }
 
-        void GridCell(float x0, float x1, int row, float rowH, string text, Color bg, Color fg, int size)
+        void UpdateStartButton()
+        {
+            if (morningStartButton == null) return;
+            morningStartButton.interactable = picked.Count > 0;
+            morningStartText.text = picked.Count > 0 ? "영업 시작 (" + picked.Count + "/" + PickMax + "명)" : "선생님을 골라주세요 (0/" + PickMax + ")";
+        }
+
+        Image GridCell(float x0, float x1, int row, float rowH, string text, Color bg, Color fg, int size)
         {
             float yMax = 1f - row * rowH;
             float yMin = yMax - rowH;
@@ -419,6 +534,7 @@ namespace SalonIntern
 
             Text label = UiFactory.Label("Text", cell.transform, text, size, fg, TextAnchor.MiddleCenter);
             label.horizontalOverflow = HorizontalWrapMode.Overflow;
+            return cell;
         }
 
         // ---------- 피로도와 휴식 ----------
@@ -450,7 +566,7 @@ namespace SalonIntern
         static readonly float[] RefillMinutes = { 4f, 4f, 4f, 4f }; // 채우기를 누르면 전부 채워지는 데 걸리는 게임 분 (현실 약 2초)
         static readonly float[] StockDrainMin = { 8f, 10f, 10f, 14f };    // 시간으로 1개 줄어드는 간격(현실 초)
         static readonly float[] StockDrainMax = { 14f, 16f, 16f, 26f };
-        // 시술을 끝내면 줄어드는 재료: 샴푸 / 롤 / 염색 / 드라이
+        // 시술을 끝내면 줄어드는 재료: 샴푸 / 펌 / 염색 / 드라이
         static readonly int[][] ProcedureUses = { new[] { 0 }, new[] { 1, 2 }, new[] { 1, 0 }, new[] { 0, 3 }, new[] { 1 } };
         readonly int[] stock = { 30, 20, 20, 5 };
         readonly float[] stockDrain = new float[4];      // 다음에 1개 줄어들 때까지 현실 초
@@ -464,12 +580,29 @@ namespace SalonIntern
         RectTransform supplyChoicePanel;
 
         // 피로도가 쌓일수록 요청 제한시간이 짧아진다 (최대 30%)
+        // 선생님과의 친분 (0~100). 높을수록 제한시간이 길어지고 점수 보너스가 붙는다.
+        readonly Dictionary<int, float> closeness = new Dictionary<int, float>();
+        float Closeness(DesignerData d)
+        {
+            float v;
+            return closeness.TryGetValue(d.id, out v) ? v : 0f;
+        }
+        void AddCloseness(DesignerData d, float delta)
+        {
+            closeness[d.id] = Mathf.Clamp(Closeness(d) + delta, 0f, 100f);
+        }
+        string HeartText(DesignerData d)
+        {
+            int h = Mathf.FloorToInt(Closeness(d) / 20f);
+            return h > 0 ? " ♥" + h : "";
+        }
+
         float TimeLimitFor(DesignerData d, int procedure = -1)
         {
             float tired = 1f - 0.3f * (fatigue / 100f);
             int[] steps = procedure >= 0 ? RouteFor(procedure) : null;
             float longer = steps != null ? 1f + 0.5f * (steps.Length - 1) : 1f; // 단계가 많은 시술은 시간을 더 준다
-            return LevelConfig.TimeLimit[level] * Mathf.Max(0.3f, d.patienceMultiplier) * tired * longer;
+            return LevelConfig.TimeLimit[level] * Mathf.Max(0.3f, d.patienceMultiplier) * tired * longer * (1f + 0.2f * Closeness(d) / 100f);
         }
 
         bool IsLunchTime()
@@ -531,7 +664,7 @@ namespace SalonIntern
             }
         }
 
-        // 시간이 지나면 재료가 줄고, 0인 재료가 있으면 선배에게 혼난다
+        // 시간이 지나면 재료가 줄고, 0인 재료가 있으면 선생님에게 혼난다
         void UpdateSupplies()
         {
             for (int k = 0; k < stock.Length; k++)
@@ -553,7 +686,7 @@ namespace SalonIntern
             if (refilling && refillKind == k) return; // 지금 채우는 중이면 봐준다
             scoldCooldown[k] = 20f;
             score = Mathf.Max(0, score - ScoldSupplyPenalty);
-            Say("선배들 잔소리: " + StockNames[k] + "이(가) 떨어졌잖아! (점수 -" + ScoldSupplyPenalty + ")");
+            Say("선생님들 잔소리: " + StockNames[k] + "이(가) 떨어졌잖아! (점수 -" + ScoldSupplyPenalty + ")");
             Toast("✖ " + StockNames[k] + "이(가) 떨어졌어요!  점수 -" + ScoldSupplyPenalty, false);
             RefreshTop();
         }
@@ -732,7 +865,7 @@ namespace SalonIntern
             if (waiting >= limit)
             {
                 score = Mathf.Max(0, score - ScoldPenalty);
-                msg = "선배들 잔소리: 손님이 밀렸는데 쉬고 있었어요! (점수 -" + ScoldPenalty + ")  " + msg;
+                msg = "선생님들 잔소리: 손님이 밀렸는데 쉬고 있었어요! (점수 -" + ScoldPenalty + ")  " + msg;
             }
             Say(msg);
             if (waiting >= limit) Toast("✖ 손님이 밀렸는데 쉬었어요!  점수 -" + ScoldPenalty, false);
@@ -771,7 +904,7 @@ namespace SalonIntern
             Say("쉬는 건 나중에. 일하러 가요!");
         }
 
-        // 쉬는 중에 손님이 너무 밀리면 선배들에게 잔소리를 듣고 쉬던 걸 멈춘다
+        // 쉬는 중에 손님이 너무 밀리면 선생님들에게 잔소리를 듣고 쉬던 걸 멈춘다
         void InterruptRest()
         {
             if (!resting) return;
@@ -781,7 +914,7 @@ namespace SalonIntern
 
             resting = false;
             score = Mathf.Max(0, score - ScoldPenalty);
-            Say("선배들 잔소리: 손님이 밀렸는데 쉬고 있었어요! (점수 -" + ScoldPenalty + ")");
+            Say("선생님들 잔소리: 손님이 밀렸는데 쉬고 있었어요! (점수 -" + ScoldPenalty + ")");
             RefreshTop();
         }
 
@@ -851,19 +984,33 @@ namespace SalonIntern
                 };
                 r.remaining = r.timeLimit;
                 CreateCard(r);
+                dayRequests++;
                 active.Add(r);
                 InterruptRest();
                 waitingBookings.RemoveAt(i);
-                Say((b.isVip ? "VIP " : "") + "예약 손님 도착: " + b.designer.name + " 선배 / " + r.label);
+                Say((b.isVip ? "VIP " : "") + "예약 손님 도착: " + b.designer.name + " 선생님 / " + r.label);
                 return; // 한 번에 한 장씩
             }
+        }
+
+        // 아직 견학하지 않았고 지금 카드로 떠 있지도 않은 시술 중 가장 앞 번호
+        int NextTourProcedure()
+        {
+            for (int p = 0; p < LevelConfig.ProcedureNames.Length; p++)
+            {
+                if (tourSeen[p]) continue;
+                bool shown = false;
+                foreach (Request r in active) if (r.isProcedure && r.procIdx == p) shown = true;
+                if (!shown) return p;
+            }
+            return -1;
         }
 
         void TrySpawn()
         {
             for (int attempt = 0; attempt < 20; attempt++)
             {
-                DesignerData d = designers[Random.Range(0, designers.Length)];
+                DesignerData d = picked[Random.Range(0, picked.Count)];
                 if (HasRequest(d)) continue; // 디자이너 한 명당 요청은 한 장
 
                 bool procedure = true; // 잡일은 이제 카드가 아니라 재료실에서 채운다
@@ -877,14 +1024,24 @@ namespace SalonIntern
                 }
                 else
                 {
-                    int p = PickProcedure(d);
+                    int p;
+                    if (TourDay)
+                    {
+                        p = NextTourProcedure();
+                        if (p < 0) return;
+                        locked = true;
+                    }
+                    else
+                    {
+                        p = PickProcedure(d);
+                        locked = level < LevelConfig.ProcedureUnlockLevel[p];
+                        if (locked && tourSeen[p]) continue; // 견학은 시술 종류마다 한 번만
+
+                        // 못 하는 시술은 일부만 화면에 보여준다
+                        if (locked && Random.value > LevelConfig.LockedShowRate[level]) continue;
+                    }
                     procIndex = p;
                     label = ProcLabel(p);
-                    locked = level < LevelConfig.ProcedureUnlockLevel[p];
-                    if (locked && tourSeen[p]) continue; // 견학은 시술 종류마다 한 번만
-
-                    // 못 하는 시술은 일부만 화면에 보여준다
-                    if (locked && Random.value > LevelConfig.LockedShowRate[level]) continue;
                 }
 
                 Request r = new Request
@@ -901,6 +1058,7 @@ namespace SalonIntern
                 r.remaining = r.timeLimit;
 
                 CreateCard(r);
+                dayRequests++;
                 active.Add(r);
                 InterruptRest();
                 return;
@@ -946,7 +1104,7 @@ namespace SalonIntern
             return false;
         }
 
-        // 디자이너의 시술 확률(샴푸/롤/염색/드라이)로 하나 뽑기
+        // 디자이너의 시술 확률(샴푸/펌/염색/드라이)로 하나 뽑기
         int PickProcedure(DesignerData d)
         {
             // 커트는 Lv.5부터 모든 디자이너가 같은 비율로 요청 (임시)
@@ -997,7 +1155,7 @@ namespace SalonIntern
             Vector2 seat = SeatPos(r.designer);
             playerTarget = r.useAnchor ? r.anchor : new Vector2(seat.x, seat.y > 0f ? 55f : -55f);
             playerWalking = true;
-            Say(r.isMess ? "바닥을 쓸러 가는 중..." : r.designer.name + " 선배에게 가는 중... (" + r.label + ")");
+            Say(r.isMess ? "바닥을 쓸러 가는 중..." : r.designer.name + " 선생님에게 가는 중... (" + r.label + ")");
         }
 
         void UpdatePlayer()
@@ -1036,7 +1194,7 @@ namespace SalonIntern
                         PickUpCustomer();
                         playerTarget = StepPos(task, 0);
                         playerWalking = true;
-                        Say(task.designer.name + " 선배의 손님을 " + StepNames[task.route[0]] + "하러 모셔요");
+                        Say(task.designer.name + " 선생님의 손님을 " + StepNames[task.route[0]] + "하러 모셔요");
                         return;
                     }
                 }
@@ -1085,9 +1243,27 @@ namespace SalonIntern
         {
             int step = task.route[task.routeIdx];
             bool mine = level >= StepUnlock[step];
+            if (mine)
+            {
+                // 내가 할 수 있는 단계: 짧은 미니게임으로 직접 한다
+                minigameActive = true;
+                System.Action<ExamResult> done = r =>
+                {
+                    minigameActive = false;
+                    if (task == null || playerTask != task || !active.Contains(task)) return;
+                    string g = r.hits >= 85 ? "S" : (r.hits >= 60 ? "A" : (r.hits >= 30 ? "B" : "C"));
+                    Say(StepNames[step] + " " + g + "등급 (" + r.hits + "%)");
+                    CompleteStep(task, r.hits);
+                };
+                // 샴푸(적시기, 샴푸, 헹구기)와 펌(빗질, 파지, 롯드, 고무줄)은 전용 미니게임
+                if (step == 0) { ShampooExam.Lite = true; ExamBase.Show<ShampooExam>(canvasRoot, done); }
+                else if (step == 1) { PermExam.Lite = true; ExamBase.Show<PermExam>(canvasRoot, done); }
+                else { StepGame.Step = step; ExamBase.Show<StepGame>(canvasRoot, done); }
+                return;
+            }
             waitingAtStation = true;
-            stationWait = mine ? 1.5f : 4f;
-            Say(mine ? StepNames[step] + " 하는 중..." : task.designer.name + " 선배가 " + StepNames[step] + "하는 중...");
+            stationWait = 4f;
+            Say(task.designer.name + " 선생님이 " + StepNames[step] + "하는 중...");
         }
 
         void ConsumeStep(int step)
@@ -1115,7 +1291,15 @@ namespace SalonIntern
             Request task = playerTask;
             if (task == null || !active.Contains(task)) return;
 
+            CompleteStep(task, 70); // 선생님이 한 단계는 보통 솜씨
+        }
+
+        // 한 단계를 끝냈을 때: 완성도를 기록하고 다음 단계로 (마지막이면 시술 완료)
+        void CompleteStep(Request task, int pct)
+        {
             int step = task.route[task.routeIdx];
+            task.satSum += pct;
+            task.satCount++;
             ConsumeStep(step);
             if (step == 4) SpawnFloorMess(); // 커트 뒤에는 바닥에 머리카락이 남는다
 
@@ -1138,7 +1322,7 @@ namespace SalonIntern
             switch (procedure)
             {
                 case 0: return 0;      // 샴푸 -> 샴푸실
-                case 1: return 1;      // 롤 -> 시술석
+                case 1: return 1;      // 펌 -> 시술석
                 case 2: return 1;      // 염색 -> 시술석
                 case 4: return 2;      // 커트 -> 커트석
                 default: return -1;    // 드라이 -> 자리에서
@@ -1206,12 +1390,18 @@ namespace SalonIntern
             {
                 done++;
                 if (r.procIdx >= 0 && r.procIdx < practice.Length) practice[r.procIdx]++;
-                int gained = StepScore(r) + (r.isVip ? 30 : (r.isReserved ? 10 : 0));
+                int sat = r.satCount > 0 ? Mathf.RoundToInt((float)r.satSum / r.satCount) : 70; // 손님 만족도
+                float mult = 0.7f + 0.6f * sat / 100f;
+                int friendBonus = Mathf.FloorToInt(Closeness(r.designer) / 10f);
+                int gained = Mathf.RoundToInt(StepScore(r) * mult) + (r.isVip ? 30 : (r.isReserved ? 10 : 0)) + friendBonus;
                 score += gained;
-                fatigue = Mathf.Min(100f, fatigue + (r.isProcedure ? 6f : 4f));
+                string satGrade = sat >= 85 ? "S" : (sat >= 60 ? "A" : (sat >= 30 ? "B" : "C"));
+                int closeDelta = sat >= 85 ? 4 : (sat >= 60 ? 2 : (sat >= 30 ? 0 : -2));
+                AddCloseness(r.designer, closeDelta);
+                fatigue = Mathf.Min(100f, fatigue + (r.isProcedure ? 6f : 4f) * LevelConfig.FatigueScale[level]);
                 AddXp(r.isProcedure ? 2 : 1);
-                Say(r.designer.name + " 선배의 " + r.label + " 완료!");
-                Toast("✔ " + r.designer.name + " 선배의 " + r.label + " 완료!   +" + gained + "점  XP +2", true);
+                Say(r.designer.name + " 선생님의 " + r.label + " 완료!");
+                Toast("✔ " + r.designer.name + " 선생님의 " + r.label + " 완료!  만족도 " + satGrade + "   +" + gained + "점  XP +2" + (closeDelta > 0 ? "  ♥친분 +" + closeDelta : (closeDelta < 0 ? "  ♥친분 " + closeDelta : "")), sat >= 30);
             }
             RemoveRequest(r);
             RefreshTop();
@@ -1226,7 +1416,7 @@ namespace SalonIntern
         static readonly string[] StepHow =
         {
             "샴푸실에서 손님 머리를 감겨요. 손목으로 물 온도를 먼저 확인하고, 두피를 손끝으로 마사지하듯 씻어요.",
-            "시술석에서 롤을 말고 펌제를 발라요. 롤은 두피 방향에 맞춰 단단하고 고르게 말아야 해요.",
+            "시술석에서 빗질로 머리를 정리하고, 파지로 머리를 나눠 롯드를 말고 고무줄로 고정해요. 롯드는 단단하고 고르게 말아야 해요.",
             "시술석에서 염색약을 배합해 뿌리부터 발라요. 시간을 지켜서 방치해야 색이 고르게 나와요.",
             "디자이너 자리에서 드라이로 말려 모양을 잡아요. 뿌리부터 말리고 끝을 마무리해요.",
             "커트석에서 디자이너가 커트해요. 끝나면 바닥에 머리카락이 남으니 바로 쓸어야 해요.",
@@ -1245,7 +1435,7 @@ namespace SalonIntern
             {
                 string order = "";
                 for (int i = 0; i < route.Length; i++) order += (i > 0 ? " → " : "") + StepNames[route[i]];
-                pages.Add(r.designer.name + " 선배의 " + r.label + "을(를) 견학해요.\n\n"
+                pages.Add(r.designer.name + " 선생님의 " + r.label + "을(를) 견학해요.\n\n"
                     + "이 시술은 " + route.Length + "단계예요.\n" + order);
 
                 for (int i = 0; i < route.Length; i++)
@@ -1270,7 +1460,7 @@ namespace SalonIntern
         {
             if (r.procIdx >= 0 && r.procIdx < tourSeen.Length) tourSeen[r.procIdx] = true;
             AddXp(gain);
-            Say(r.designer.name + " 선배의 " + r.label + "을(를) 견학했어요 (XP +" + gain + ")");
+            Say(r.designer.name + " 선생님의 " + r.label + "을(를) 견학했어요 (XP +" + gain + ")");
             Toast("✔ " + r.label + " 견학 완료!   XP +" + gain, true);
             if (active.Contains(r)) RemoveRequest(r);
 
@@ -1289,7 +1479,7 @@ namespace SalonIntern
             {
                 "환영해요! 오늘부터 인턴이에요.\n\n초록색 '나'가 여러분이에요.\n말풍선을 누르면 그 자리로 걸어가요.",
                 "회색 말풍선은 아직 못 하는 시술이에요.\n\n눌러서 '견학'하면 방법을 배우고 XP를 얻어요.\n견학은 시술 종류마다 한 번만 할 수 있어요.",
-                "왼쪽 아래 재료실에서 수건, 도구, 음료, 청소용품을 채워요.\n\n재료가 0이 되면 선배에게 혼나요.",
+                "왼쪽 아래 재료실에서 수건, 도구, 음료, 청소용품을 채워요.\n\n재료가 0이 되면 선생님에게 혼나요.",
                 "왼쪽 위 휴게실에서 쉬면 피로도가 줄어요.\n\n하루 휴게시간은 1시간이고, 손님이 밀렸을 때 쉬면 잔소리를 들어요.",
             };
             ShowDialog("처음이에요", pages, "시작하기", null);
@@ -1352,7 +1542,7 @@ namespace SalonIntern
         void FinishFloorSweep(Request r, SweepResult result)
         {
             minigameActive = false;
-            fatigue = Mathf.Min(100f, fatigue + 8f);
+            fatigue = Mathf.Min(100f, fatigue + 8f * LevelConfig.FatigueScale[level]);
 
             string grade;
             int points;
@@ -1383,8 +1573,9 @@ namespace SalonIntern
         void Expire(Request r)
         {
             missed++;
-            Toast(r.isMess ? "✖ 바닥을 못 치웠어요" : "✖ " + r.designer.name + " 선배의 " + r.label + " 놓침", false);
-            Say(r.isMess ? "바닥이 지저분한 채로 남았어요" : r.designer.name + " 선배가 " + r.label + "을(를) 직접 처리했어요");
+            if (!r.isMess) AddCloseness(r.designer, -3f);
+            Toast(r.isMess ? "✖ 바닥을 못 치웠어요" : "✖ " + r.designer.name + " 선생님의 " + r.label + " 놓침", false);
+            Say(r.isMess ? "바닥이 지저분한 채로 남았어요" : r.designer.name + " 선생님이 " + r.label + "을(를) 직접 처리했어요");
             RemoveRequest(r);
             RefreshTop();
         }
@@ -1418,8 +1609,8 @@ namespace SalonIntern
         // ---------- 승급시험 ----------
 
         // 시험을 보려면 XP가 가득 차야 하고, 그 레벨의 시술을 정해진 횟수만큼 연습해야 한다
-        // 0: 견학 4종, 1: 샴푸, 2: 롤, 3: 염색, 4: 드라이, 5: 커트, 6(졸업): 시술 총 20회
-        static readonly int[] ExamNeed = { 4, 6, 4, 4, 5, 3, 20 };
+        // 0: 견학 6종, 1: 샴푸, 2: 펌, 3: 염색, 4: 드라이, 5: 커트, 6(졸업): 시술 총 20회
+        static readonly int[] ExamNeed = { 6, 6, 4, 4, 5, 3, 20 };
         readonly int[] practice = new int[6]; // 시술별로 끝낸 횟수
         int lastExamDay;
         bool graduated;
@@ -1434,7 +1625,7 @@ namespace SalonIntern
             if (level == 0)
             {
                 have = 0;
-                for (int i = 0; i < 4; i++) if (tourSeen[i]) have++;
+                for (int i = 0; i < tourSeen.Length; i++) if (tourSeen[i]) have++;
                 what = "견학";
             }
             else if (level >= LevelConfig.MaxLevel)
@@ -1448,7 +1639,7 @@ namespace SalonIntern
                 have = practice[level - 1];
                 what = LevelConfig.ProcedureShortNames[level - 1];
             }
-            int need = ExamNeed[level];
+            int need = LevelConfig.TestMode ? 1 : ExamNeed[level];
             met = have >= need;
             text = what + " " + Mathf.Min(have, need) + "/" + need + (met ? " ✔" : "");
         }
@@ -1484,31 +1675,33 @@ namespace SalonIntern
             if (!CanTakeExam()) return;
             lastExamDay = day;
             int examLevel = level;
-            if (examLevel == 0)
-            {
-                // 입문 시험: 견학에서 배운 염색과 파마의 순서 맞추기
-                var problems = new List<ExamOrderGame.Problem>();
-                foreach (int proc in new[] { 2, 1 })
-                {
-                    int[] route = RouteFor(proc);
-                    string[] names = new string[route.Length];
-                    for (int i = 0; i < route.Length; i++) names[i] = StepNames[route[i]];
-                    problems.Add(new ExamOrderGame.Problem
-                    {
-                        title = LevelConfig.ProcedureNames[proc] + " 시술의 순서",
-                        steps = names,
-                    });
-                }
-                ExamOrderGame.Show(canvasRoot, problems, result => FinishExam(examLevel, result));
-                return;
-            }
+            // 다음 레벨에서 해금되는 시술의 시험을 통과해야 그 시술을 할 수 있다
+            // Lv0 -> 샴푸, Lv1 -> 펌, Lv2 -> 염색(탈색 포함), Lv3 -> 드라이, Lv4 -> 커트, Lv5 -> 종합 순서
             switch (examLevel)
             {
-                case 1: ExamBase.Show<ShampooExam>(canvasRoot, r => FinishExam(examLevel, r)); return;
-                case 2: ExamBase.Show<RollExam>(canvasRoot, r => FinishExam(examLevel, r)); return;
-                case 3: ExamBase.Show<DyeExam>(canvasRoot, r => FinishExam(examLevel, r)); return;
-                case 4: ExamBase.Show<DryExam>(canvasRoot, r => FinishExam(examLevel, r)); return;
-                case 5: ExamBase.Show<CutExam>(canvasRoot, r => FinishExam(examLevel, r)); return;
+                case 0: ExamBase.Show<ShampooExam>(canvasRoot, r => FinishExam(examLevel, r)); return;
+                case 1: ExamBase.Show<PermExam>(canvasRoot, r => FinishExam(examLevel, r)); return;
+                case 2: ExamBase.Show<DyeExam>(canvasRoot, r => FinishExam(examLevel, r)); return;
+                case 3: ExamBase.Show<DryExam>(canvasRoot, r => FinishExam(examLevel, r)); return;
+                case 4: ExamBase.Show<CutExam>(canvasRoot, r => FinishExam(examLevel, r)); return;
+                case 5:
+                {
+                    // 종합 시험: 파마, 염색, 탈색 시술의 순서 맞추기
+                    var problems = new List<ExamOrderGame.Problem>();
+                    foreach (int proc in new[] { 1, 2, 5 })
+                    {
+                        int[] route = RouteFor(proc);
+                        string[] names = new string[route.Length];
+                        for (int i = 0; i < route.Length; i++) names[i] = StepNames[route[i]];
+                        problems.Add(new ExamOrderGame.Problem
+                        {
+                            title = LevelConfig.ProcedureNames[proc] + " 시술의 순서",
+                            steps = names,
+                        });
+                    }
+                    ExamOrderGame.Show(canvasRoot, problems, r => FinishExam(examLevel, r));
+                    return;
+                }
             }
             // 졸업시험: 탈색 순서 -> 커트 -> 타이밍 (한 단계라도 실패하면 불합격)
             int[] bleachRoute = RouteFor(5);
@@ -1601,7 +1794,9 @@ namespace SalonIntern
                 + "   XP " + XpLabel()
                 + "   점수 " + score
                 + "   완료 " + done
-                + "   놓침 " + missed;
+                + "   놓침 " + missed
+                + (fastForward && phase == Phase.Business ? "   ⏩ 빨리 감기" : "")
+                + (phase == Phase.Business ? "   오늘 " + Mathf.Min(dayRequests, Quota()) + "/" + Quota() : "");
         }
 
         void Say(string message)
@@ -1684,6 +1879,10 @@ namespace SalonIntern
             BuildDayPanel(root, "EveningPanel", "다음 날 시작", NextDay,
                 out eveningPanel, out eveningTitle, out eveningBody);
 
+            Transform startTf = morningPanel.Find("NextButton");
+            morningStartButton = startTf.GetComponent<Button>();
+            morningStartText = startTf.GetComponentInChildren<Text>();
+
             // 아침 화면 배치: 제목, 요약 줄, 예약표 시간표, 안내 문구
             UiFactory.Stretch(morningTitle.rectTransform, 0f, 0.885f, 1f, 0.99f);
             UiFactory.Stretch(morningBody.rectTransform, 0.04f, 0.80f, 0.96f, 0.875f);
@@ -1693,9 +1892,9 @@ namespace SalonIntern
             reservationArea = UiFactory.Rect("ReservationGrid", morningPanel);
             UiFactory.Stretch(reservationArea, 0.04f, 0.19f, 0.96f, 0.79f);
 
-            Text note = UiFactory.Label("Note", morningPanel,
-                "※ 예약 시간이 되면 그 디자이너의\n예약 손님이 카드로 나타나요. (VIP는 보너스 점수)", 24, TextDark, TextAnchor.MiddleLeft);
-            UiFactory.Stretch(note.rectTransform, 0.04f, 0.02f, 0.33f, 0.17f);
+            morningNote = UiFactory.Label("Note", morningPanel,
+                "※ 오늘 같이 일할 선생님을 최대 3명 골라요.\n고른 선생님의 예약 손님만 와요. (VIP는 보너스)", 24, TextDark, TextAnchor.MiddleLeft);
+            UiFactory.Stretch(morningNote.rectTransform, 0.04f, 0.02f, 0.33f, 0.17f);
 
             // 승급시험: 조건 안내와 응시 버튼 (조건을 채웠을 때만 버튼이 보인다)
             examInfoText = UiFactory.Label("ExamInfo", morningPanel, "", 20, TextDark, TextAnchor.UpperLeft);

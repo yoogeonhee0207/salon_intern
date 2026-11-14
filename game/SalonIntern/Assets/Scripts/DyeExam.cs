@@ -9,7 +9,7 @@ namespace SalonIntern
         protected override string Title { get { return "염색 시험  -  배합과 도포"; } }
         protected override string Rule
         {
-            get { return "1단계: 빨강·노랑·파랑 양을 조절해 목표 색과 똑같이 맞춰요.\n2단계: 두피 쪽(위)부터 아래로 문질러 염색약을 빠짐없이 발라요."; }
+            get { return "1단계: 빨강·노랑·파랑 양을 조절해 목표 색에 맞춰요. (한 칸 차이는 괜찮아요)\n2단계: 두피 쪽(위)부터 아래로 문질러 염색약을 발라요. (80% 이상이면 합격)"; }
         }
 
         static readonly string[] ChannelNames = { "빨강", "노랑", "파랑" };
@@ -20,8 +20,8 @@ namespace SalonIntern
 
         const int Cols = 8;
         const int Rows = 4;
-        const float TimeLimit = 25f;
-        const int AllowedMistakes = 2;
+        const float TimeLimit = 40f;
+        const int AllowedMistakes = 4;
 
         // 1단계
         readonly int[] values = new int[3];
@@ -44,10 +44,11 @@ namespace SalonIntern
         protected override void Setup()
         {
             // 목표 색 뽑기
+            // 쉽게: 색은 최대 두 가지만 섞고 양도 0~3으로 제한
             do
             {
-                for (int i = 0; i < 3; i++) target[i] = Random.Range(0, 5);
-            } while (target[0] + target[1] + target[2] < 2);
+                for (int i = 0; i < 3; i++) target[i] = Random.Range(0, 4);
+            } while (target[0] + target[1] + target[2] < 2 || (target[0] > 0 ? 1 : 0) + (target[1] > 0 ? 1 : 0) + (target[2] > 0 ? 1 : 0) > 2);
             targetColor = Mix(target);
 
             stageA = UiFactory.Rect("StageA", self);
@@ -126,9 +127,9 @@ namespace SalonIntern
                 if (d > worstDiff) { worstDiff = d; worst = i; }
             }
 
-            if (diff == 0)
+            if (diff <= 1) // 한 칸 차이까지는 비슷한 색으로 인정
             {
-                StartStageB("색이 똑같아요! 이제 도포해요.");
+                StartStageB("색이 잘 나왔어요! 이제 도포해요.");
                 return;
             }
 
@@ -138,7 +139,7 @@ namespace SalonIntern
                 End(false, 0, 2, 2, "배합에 계속 실패했어요...");
                 return;
             }
-            string hint = values[worst] < target[worst] ? ChannelNames[worst] + "이(가) 부족해요" : ChannelNames[worst] + "이(가) 너무 많아요";
+            string hint = values[worst] < target[worst] ? ChannelNames[worst] + " 더 넣어요 (+)" : ChannelNames[worst] + " 덜 넣어요 (-)";
             feedbackText.text = "아직 달라요: " + hint + "  (기회 " + (AllowedMistakes - mistakes + 1) + "번 남음)";
         }
 
@@ -164,7 +165,7 @@ namespace SalonIntern
             }
         }
 
-        int Needed() { return Mathf.CeilToInt(cells.Length * 0.9f); }
+        int Needed() { return Mathf.CeilToInt(cells.Length * 0.8f); }
 
         // 위쪽 줄(뿌리)부터: 윗줄이 어느 정도 발려야 아랫줄에 바를 수 있다
         void Apply(Vector2 p)
@@ -175,16 +176,16 @@ namespace SalonIntern
 
             for (int i = 0; i < cells.Length; i++)
             {
-                if ((centers[i] - p).magnitude > 85f) continue;
+                if ((centers[i] - p).magnitude > 100f) continue;
 
                 int row = i / Cols;
-                if (row > 0 && RowAverage(row - 1) < 0.6f)
+                if (row > 0 && RowAverage(row - 1) < 0.35f)
                 {
                     feedbackText.text = "뿌리(위)부터 발라야 해요!";
                     continue;
                 }
                 feedbackText.text = "";
-                applied[i] = Mathf.Min(1f, applied[i] + dist / 450f);
+                applied[i] = Mathf.Min(1f, applied[i] + dist / 280f);
                 cells[i].color = Color.Lerp(new Color(0.88f, 0.84f, 0.78f), targetColor, applied[i]);
             }
 

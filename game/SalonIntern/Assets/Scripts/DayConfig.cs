@@ -21,7 +21,7 @@ namespace SalonIntern
         // 오늘의 목표 점수 (임시 공식)
         public static int TargetScore(int level)
         {
-            return 600 + 200 * level;
+            return LevelConfig.DailyQuota[level] * 30; // 하루 목표 건수 x 건당 평균 점수
         }
 
         // 하루 평가 등급
@@ -38,7 +38,7 @@ namespace SalonIntern
             switch (grade)
             {
                 case "S": return "원장님이 말없이 고개를 끄덕였어요.";
-                case "A": return "선배들이 수고했다고 한마디씩 건네요.";
+                case "A": return "선생님들이 수고했다고 한마디씩 건네요.";
                 case "B": return "내일은 조금 더 잘할 수 있을 거예요.";
                 default: return "오늘은 정신없는 하루였어요. 내일 다시 힘내요!";
             }
