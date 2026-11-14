@@ -1,4 +1,6 @@
-# 미용실 인턴 게임 (가제)
+# 막내의 가위 (가제)
+
+> 수건 접던 막내가 가위를 잡기까지, 인턴 한 명이 매장을 돌린다
 
 번화가 프랜차이즈 미용실의 막내 인턴이 되어, 하루하루 일을 배우고 디자이너로 성장하는 타이쿤 + 미니게임 + 스토리 혼합 게임입니다.
 
@@ -8,7 +10,7 @@
 
 ## 플랫폼
 
-모바일 (가로 화면), 무료 + 광고 + 인앱결제
+모바일 (가로 화면), Unity (C#), 1인 개발, 무료 + 광고 + 인앱결제
 
 ## 핵심 콘셉트
 
@@ -28,7 +30,7 @@ salon-intern-game/
 │   ├── design/
 │   │   └── game-design-v2.1.md   # 기획서 (최신)
 │   └── changelog.md              # 기획 변경 이력
-├── characters/                   # 인물 설정 (예정)
+├── characters/                   # 고정 인물 설정
 └── game/                         # 게임 프로젝트 (엔진 결정 후)
 ```
 
@@ -37,8 +39,17 @@ salon-intern-game/
 - [기획서 v2.1](docs/design/game-design-v2.1.md)
 - [변경 이력](docs/changelog.md)
 
+## 고정 인물
+
+- [원장 한서린](characters/01-director-han-seorin.md)
+- [수석 디자이너 최하준](characters/02-chief-choi-hajun.md)
+- [커트 디자이너 박태양](characters/03-cut-park-taeyang.md)
+- [다정 디자이너 송몽실](characters/04-kind-song-mongsil.md)
+- [신입 디자이너 조은새](characters/05-junior-jo-eunsae.md)
+
+이름은 가명이며 언제든 바꿀 수 있다.
+
 ## 미결정 사항
 
-- 한 줄 콘셉트
-- 고정 인물(원장, 핵심 디자이너 4명) 이름과 성격
-- 엔진 (Unity / Godot)
+- 나머지 디자이너 7명의 성격 (랜덤 시스템 적용 여부)
+- 개발 일정과 단계별 목표
