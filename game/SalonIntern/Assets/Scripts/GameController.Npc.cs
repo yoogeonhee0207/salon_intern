@@ -37,7 +37,7 @@ namespace SalonIntern
         Image playerRing;    // 내 캐릭터 발밑의 노란 빛
         Text playerTag;      // 내 캐릭터 머리 위의 "▼ 나" 표시
         const float NpcSpeed = 380f;
-        const float HelpAfterSeconds = 8f;   // 내가 고른 선생님 일을 내가 이 시간 안에 시작하지 않으면, 한가한 인턴이 도와준다
+        const float HelpAfterSeconds = 4f;   // 내가 고른 선생님 일을 내가 이 시간 안에 시작하지 않으면, 한가한 인턴이 도와준다
 
         // 내 캐릭터를 눈에 띄게: 발밑 노란 빛 + 머리 위 표시
         void BuildPlayerMarker()
@@ -447,7 +447,7 @@ namespace SalonIntern
                 }
                 // 스태미너: 일하는 동안 줄고(재료 채우기 포함), 휴게 중에는 찬다
                 if (n.resting && n.task == null) n.stamina = Mathf.Min(100f, n.stamina + (100f / 30f) * dt);
-                else if (n.task != null || n.refillKind >= 0) n.stamina = Mathf.Max(3f, n.stamina - 0.62f * dt);   // 하던 일을 마치는 동안에도 0까지는 안 내려간다
+                else if (n.task != null || n.refillKind >= 0) n.stamina = Mathf.Max(3f, n.stamina - 0.4f * dt);   // 하던 일을 마치는 동안에도 0까지는 안 내려간다
 
                 if (n.task == null && !n.resting && n.refillKind < 0)
                 {
@@ -459,7 +459,7 @@ namespace SalonIntern
                         foreach (Request r in active)
                         {
                             bool mine = r.assignee == n.id || (r.assignee > 0 && npcs[r.assignee - 1].resting); // 쉬는 인턴의 일도 대신 맡는다
-                            if (!mine || r.npcBusy || r.npcActive || playerTask == r) continue;
+                            if (!mine || r.npcBusy || r.npcActive || playerTask == r || IsPlayerOnlyCut(r)) continue;
                             if (r.isLocked || r.processing || r.pickup || r.started) continue;
                             if (pass == 0 ? !r.ready : r.ready) continue;
                             if (NpcNeedsChairNow(r)) continue;
@@ -483,18 +483,18 @@ namespace SalonIntern
                         int bestHard = -1;
                         foreach (Request r in active)
                         {
-                            if (r.npcOnly || r.assignee != 0 || r.isLocked || r.isMess) continue;
+                            if (r.npcOnly || r.assignee != 0 || r.isLocked || r.isMess || IsPlayerOnlyCut(r)) continue;
                             if (playerTask == r || r.npcBusy || r.npcActive || r.processing || r.ready || r.pickup || r.started || r.chair >= 0 || r.routeIdx != 0) continue;
                             int hard = HardScore(r);
                             // 내가 못 하는 단계가 든 시술은 곧바로(2초), 나머지는 내가 시작 안 하면 8초 뒤 도와준다
-                            if (r.assignAge < (hard >= 1000 ? 2f : HelpAfterSeconds)) continue;
+                            if (r.assignAge < (hard >= 1000 ? 1f : HelpAfterSeconds)) continue;
                             if (NpcNeedsChairNow(r)) continue;
                             if (hard > bestHard) { bestHard = hard; pick = r; }
                         }
                         if (pick != null)
                         {
                             SetAssignee(pick, n.id);
-                            Toast(Ga(n.role) + " " + pick.designer.name + " 선생님 " + Reul(pick.label) + " 도와줘요", true);
+                            Toast(Ga(n.role) + " " + OwnerTitle(pick) + " " + Reul(pick.label) + " 도와줘요", true);
                         }
                     }
                     if (pick != null)
@@ -620,13 +620,13 @@ namespace SalonIntern
             if (r.npcOnly)
             {
                 // 내가 고르지 않은 선생님 일: 점수와 친분 없이 조용히 끝낸다
-                Say(Ga(n.role) + " " + r.designer.name + " 선생님의 " + Reul(r.label) + " 끝냈어요");
+                Say(Ga(n.role) + " " + OwnerTitle(r) + "의 " + Reul(r.label) + " 끝냈어요");
                 RemoveRequest(r);
                 return;
             }
 
             // 건수와 점수는 내가 직접 한 일만 센다. 인턴이 끝낸 일은 손님이 만족하고 돌아갈 뿐이다.
-            Toast("✔ " + Ga(n.role) + " " + r.designer.name + " 선생님의 " + r.label + " 완료", true);
+            Toast("✔ " + Ga(n.role) + " " + OwnerTitle(r) + "의 " + r.label + " 완료", true);
             RemoveRequest(r);
             RefreshTop();
         }

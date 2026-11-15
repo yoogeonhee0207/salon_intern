@@ -147,7 +147,7 @@ namespace SalonIntern
 
         string CustomerGreeting(Request r)
         {
-            if (r.customerName == null) return r.designer.name + " 선생님의 손님을 모셔요";
+            if (r.customerName == null) return OwnerTitle(r) + "의 손님을 모셔요";
             return CustomerTypes[r.customerType] + " 손님 " + r.customerName + ": \"" + r.customerLine + "\"";
         }
 
@@ -414,6 +414,20 @@ namespace SalonIntern
         const int GoalReward = 15;
 
         // 선생님께 맡기기: 내가 할 수 있는 단계도 선생님께 넘길 수 있다. 하루 한도(레벨별)를 넘기면 정산에서 감점
+        // 가발/모델 커트 손님은 특정 선생님이 아니라 인턴장 이름으로 표시한다 (그 외에는 "선생님")
+        // 가발/모델 커트는 인턴장(나)만 할 수 있다: 인턴은 도와주지 못한다
+        static bool IsPlayerOnlyCut(Request r)
+        {
+            return r != null && r.label != null && (r.label.Contains("모델 커트") || r.label.Contains("가발 커트"));
+        }
+
+        string OwnerTitle(Request r)
+        {
+            if (r != null && r.label != null && (r.label.Contains("모델 커트") || r.label.Contains("가발 커트")) && npcs.Count > 0)
+                return npcs[0].role;
+            return r.designer.name + " 선생님";
+        }
+
         int dayDesignerHelps;
         static readonly int[] DesignerHelpMax = { 5, 4, 3, 3, 2, 2, 1 };
         const int DesignerHelpPenalty = 10;
@@ -433,7 +447,7 @@ namespace SalonIntern
                 waitingAtStation = true;
                 stationWait = 4f;
                 stationDonePct = 70;
-                Say(task.designer.name + " 선생님이 " + StepNames[step] + "하는 중... (오늘 " + dayDesignerHelps + "/" + DesignerHelpLimit + "회)");
+                Say(OwnerTitle(task) + "이 " + StepNames[step] + "하는 중... (오늘 " + dayDesignerHelps + "/" + DesignerHelpLimit + "회)");
             });
             RectTransform rt = b.GetComponent<RectTransform>();
             rt.anchorMin = rt.anchorMax = new Vector2(0.5f, 0.5f);
@@ -926,7 +940,7 @@ namespace SalonIntern
                     r.background.color = new Color(0.78f, 0.93f, 0.78f);
                     r.barFill.anchorMax = new Vector2(1f, 1f);
                     r.barFillImage.color = BarGreen;
-                    if (r.assignee == 0) Toast("✔ " + r.designer.name + " 선생님 손님의 " + StepNames[step] + " 대기가 끝났어요! 모시러 가요", true);
+                    if (r.assignee == 0) Toast("✔ " + OwnerTitle(r) + " 손님의 " + StepNames[step] + " 대기가 끝났어요! 모시러 가요", true);
                     continue;
                 }
                 int leftMin = Mathf.CeilToInt(left / SecPerMinute);
@@ -1040,7 +1054,7 @@ namespace SalonIntern
                 settle += "  약이 과했어요 (만족도 하락)";
             }
             task.multi = 0;
-            if (settle.Length > 0) Toast((over > 0f ? "⚠ " : "✔ ") + task.designer.name + " 선생님 손님" + settle, over <= 0f);
+            if (settle.Length > 0) Toast((over > 0f ? "⚠ " : "✔ ") + OwnerTitle(task) + " 손님" + settle, over <= 0f);
             RefreshTop();
 
             task.ready = false;

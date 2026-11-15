@@ -891,9 +891,9 @@ namespace SalonIntern
                 for (int c = 0; c < cols; c++)
                 {
                     resProc[r, c] = -1;
-                    if (Random.value < DayConfig.ReservationChance)
+                    if (Random.value < DayConfig.ChanceAt(c))
                     {
-                        resProc[r, c] = PickProcedure(designers[r], true);
+                        resProc[r, c] = PickProcedure(designers[r], true, DayConfig.OpenMinutes + c * DayConfig.SlotMinutes);
                         booked.Add(new Vector2Int(r, c));
                     }
                 }
@@ -916,6 +916,7 @@ namespace SalonIntern
                 for (int r = 0; r < rows; r++)
                 {
                     if (resProc[r, c] < 0) continue;
+                    if (resProc[r, c] == 4 && !picked.Contains(designers[r])) continue; // 가발/모델 커트는 인턴장만 해서, 고르지 않은 선생님 몫은 만들지 않는다
                     bookingsBySlot[c].Add(new Booking
                     {
                         designer = designers[r],
@@ -973,7 +974,8 @@ namespace SalonIntern
 
             float nameW = 0.26f;
             float colW = (1f - nameW) / cols;
-            float rowH = 1f / (rows + 1);
+            bool myRow = level >= 5; // Lv.5부터 내가 맡는 커트를 모아 보여주는 줄이 하나 더 생긴다
+            float rowH = 1f / (rows + 1 + (myRow ? 1 : 0));
             Color headerBg = new Color(0.20f, 0.20f, 0.26f);
             Color nameBg = new Color(0.90f, 0.86f, 0.80f);
             Color pickedBg = new Color(0.55f, 0.82f, 0.60f);
@@ -1017,6 +1019,26 @@ namespace SalonIntern
                         GridCell(x0, x1, r + 1, rowH, LevelConfig.ProcedureShortNames[resProc[r, c]],
                             Color.Lerp(emptyBg, ProcedureColors[resProc[r, c]], dim), TextDark, 15);
                     }
+                }
+            }
+            // 내 예약 줄: 내가 고른 선생님의 가발·모델 커트(나만 할 수 있는 일)를 시간별로 모아 보여준다
+            if (myRow)
+            {
+                int total = 0;
+                int[] cutAt = new int[cols];
+                for (int r = 0; r < rows; r++)
+                {
+                    if (!picked.Contains(designers[r])) continue;
+                    for (int c = 0; c < cols; c++) if (resProc[r, c] == 4) { cutAt[c]++; total++; }
+                }
+                int myIdx = rows + 1;
+                GridCell(0f, nameW, myIdx, rowH, "★ 내 커트 (고른 선생님 기준) " + total + "건", new Color(0.78f, 0.72f, 0.92f), TextDark, 20);
+                for (int c = 0; c < cols; c++)
+                {
+                    float x0 = nameW + c * colW;
+                    float x1 = nameW + (c + 1) * colW;
+                    if (cutAt[c] <= 0) GridCell(x0, x1, myIdx, rowH, "", new Color(1f, 1f, 1f, 0.85f), TextDark, 22);
+                    else GridCell(x0, x1, myIdx, rowH, LevelConfig.ProcedureShortNames[4] + (cutAt[c] > 1 ? "×" + cutAt[c] : ""), ProcedureColors[4], TextDark, 15);
                 }
             }
             UpdateStartButton();
@@ -1502,7 +1524,7 @@ namespace SalonIntern
                 active.Add(r);
                 if (!b.npcOnly) InterruptRest();
                 waitingBookings.RemoveAt(i);
-                if (!b.npcOnly) Say((b.isVip ? "VIP " : "") + "예약 손님 도착: " + b.designer.name + " 선생님 / " + r.label);
+                if (!b.npcOnly) Say((b.isVip ? "VIP " : "") + "예약 손님 도착: " + OwnerTitle(r) + " / " + r.label);
                 return; // 한 번에 한 장씩
             }
         }
@@ -1548,7 +1570,7 @@ namespace SalonIntern
                     }
                     else
                     {
-                        p = PickProcedure(d);
+                        p = PickProcedure(d, false, ClockMinutes());
                         locked = level < LevelConfig.ProcedureUnlockLevel[p];
                         if (locked && tourSeen[p]) continue; // 견학은 시술 종류마다 한 번만
 
@@ -1653,11 +1675,12 @@ namespace SalonIntern
         }
 
         // 디자이너의 시술 확률(샴푸/펌/염색/드라이)로 하나 뽑기
-        int PickProcedure(DesignerData d, bool reservation = false)
+        int PickProcedure(DesignerData d, bool reservation = false, int minutes = 24 * 60)
         {
             // 커트는 Lv.5부터 모든 디자이너가 같은 비율로 요청 (임시)
             // 예약은 디자이너 일정이라 커트도 처음부터 들어간다 (해금 전에는 견학 카드로 나온다)
             int cutWeight = (reservation || level >= LevelConfig.ProcedureUnlockLevel[4]) ? 25 : 0;
+            if (minutes < DayConfig.LateStartMinutes) cutWeight = 0; // 가발·모델 커트는 15시 이후에만 들어온다
             int bleachWeight = level >= LevelConfig.ProcedureUnlockLevel[5] ? 15 : 0; // 탈색도 임시로 모든 디자이너 공통
             int[] weights = { d.shampoo, d.roll, d.dye, d.dry, cutWeight, bleachWeight };
             int total = 0;
@@ -1739,7 +1762,7 @@ namespace SalonIntern
             Vector2 seat = SeatPos(r.designer);
             playerTarget = r.useAnchor ? r.anchor : new Vector2(seat.x, seat.y > 0f ? 55f : -55f);
             playerWalking = true;
-            Say(r.isMess ? "바닥을 쓸러 가는 중..." : r.designer.name + " 선생님에게 가는 중... (" + r.label + ")");
+            Say(r.isMess ? "바닥을 쓸러 가는 중..." : OwnerTitle(r) + "에게 가는 중... (" + r.label + ")");
         }
 
         void UpdatePlayer()
@@ -1880,7 +1903,7 @@ namespace SalonIntern
             {
                 stationWait = 4f;
                 stationDonePct = 70;
-                Say(task.designer.name + " 선생님이 " + StepNames[step] + "하는 중...");
+                Say(OwnerTitle(task) + "이 " + StepNames[step] + "하는 중...");
             }
         }
 
@@ -2111,8 +2134,8 @@ namespace SalonIntern
                     ? (sat >= 85 ? 3 : (sat >= 60 ? 2 : (sat >= 30 ? 1 : 0)))
                     : (sat >= 85 ? 2 : (sat >= 60 ? 1 : (sat >= 30 ? 1 : 0)));
                 AddXp(xpGain);
-                Say(r.designer.name + " 선생님의 " + r.label + " 완료!" + (lastReaction.Length > 0 ? "  " + lastReaction : ""));
-                Toast("✔ " + r.designer.name + " 선생님의 " + r.label + " 완료!  만족도 " + satGrade + "   +" + gained + "점  XP +" + xpGain + (assignBonus > 0 ? "  (맡은 일 +5)" : "") + (helpBonus > 0 ? "  (동료 대신 +10)" : "") + (closeDelta > 0 ? "  ♥친분 +" + closeDelta : (closeDelta < 0 ? "  ♥친분 " + closeDelta : "")), sat >= 30);
+                Say(OwnerTitle(r) + "의 " + r.label + " 완료!" + (lastReaction.Length > 0 ? "  " + lastReaction : ""));
+                Toast("✔ " + OwnerTitle(r) + "의 " + r.label + " 완료!  만족도 " + satGrade + "   +" + gained + "점  XP +" + xpGain + (assignBonus > 0 ? "  (맡은 일 +5)" : "") + (helpBonus > 0 ? "  (동료 대신 +10)" : "") + (closeDelta > 0 ? "  ♥친분 +" + closeDelta : (closeDelta < 0 ? "  ♥친분 " + closeDelta : "")), sat >= 30);
             }
             RemoveRequest(r);
             RefreshTop();
@@ -2146,7 +2169,7 @@ namespace SalonIntern
             {
                 string order = "";
                 for (int i = 0; i < route.Length; i++) order += (i > 0 ? " → " : "") + StepNames[route[i]];
-                pages.Add(r.designer.name + " 선생님의 " + r.label + "을(를) 견학해요.\n\n"
+                pages.Add(OwnerTitle(r) + "의 " + r.label + "을(를) 견학해요.\n\n"
                     + "이 시술은 " + route.Length + "단계예요.\n" + order);
 
                 for (int i = 0; i < route.Length; i++)
@@ -2171,7 +2194,7 @@ namespace SalonIntern
         {
             if (r.procIdx >= 0 && r.procIdx < tourSeen.Length) tourSeen[r.procIdx] = true;
             AddXp(gain);
-            Say(r.designer.name + " 선생님의 " + r.label + "을(를) 견학했어요 (XP +" + gain + ")");
+            Say(OwnerTitle(r) + "의 " + r.label + "을(를) 견학했어요 (XP +" + gain + ")");
             Toast("✔ " + r.label + " 견학 완료!   XP +" + gain, true);
             if (active.Contains(r)) RemoveRequest(r);
 
@@ -2290,8 +2313,8 @@ namespace SalonIntern
                 AddCloseness(r.designer, -3f);
                 score -= MissPenaltyNow; // 내가 쉬는 동안 인턴들이 못 끝낸 일도 포함해, 놓친 건마다 감점
             }
-            Toast(r.isMess ? "✖ 바닥을 못 치웠어요" : "✖ " + r.designer.name + " 선생님의 " + r.label + " 놓침   -" + MissPenaltyNow + "점", false);
-            Say(r.isMess ? "바닥이 지저분한 채로 남았어요" : r.designer.name + " 선생님이 " + r.label + "을(를) 직접 처리했어요");
+            Toast(r.isMess ? "✖ 바닥을 못 치웠어요" : "✖ " + OwnerTitle(r) + "의 " + r.label + " 놓침   -" + MissPenaltyNow + "점", false);
+            Say(r.isMess ? "바닥이 지저분한 채로 남았어요" : OwnerTitle(r) + "이 " + r.label + "을(를) 직접 처리했어요");
             RemoveRequest(r);
             RefreshTop();
         }
