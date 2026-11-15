@@ -27,6 +27,8 @@ namespace SalonIntern
             public bool ready;       // 대기가 끝나서 손님을 모시러 갈 수 있음
             public bool pickup;      // 의자로 손님을 모시러 가는 중
             public float procEnd, procTotal;
+            public float readyAt;    // 대기가 끝난 영업 시각
+            public int multi;        // 대기 중에 끝낸 다른 일의 수
             public RectTransform seated; // 의자에 앉아 있는 손님 모양
             public Text bodyText;
             public Color baseColor;
@@ -182,6 +184,7 @@ namespace SalonIntern
             FlushAchieveToast();
             UpdateChairWait();
             UpdateProcessing();
+            UpdateOverdue();
             UpdateHeadLabels();
             if (phase != Phase.Business) return;
             if (minigameActive) return;
@@ -1852,6 +1855,7 @@ namespace SalonIntern
             else
             {
                 done++;
+                CountWaitUse(r);
                 if (r.procIdx >= 0 && r.procIdx < practice.Length) practice[r.procIdx]++;
                 int sat = r.satCount > 0 ? Mathf.RoundToInt((float)r.satSum / r.satCount) : 70; // 손님 만족도
                 float mult = 0.7f + 0.6f * sat / 100f;
@@ -2022,7 +2026,7 @@ namespace SalonIntern
             else if (fraction >= 0.6f) { grade = "B"; points = 10; gainXp = 1; }
             else { grade = "C"; points = 3; gainXp = 0; }
 
-            if (grade == "C") missed++; else done++;
+            if (grade == "C") missed++; else { done++; CountWaitUse(r); }
             score += points;
             AddXp(gainXp);
 

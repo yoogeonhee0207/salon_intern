@@ -594,6 +594,27 @@ namespace SalonIntern
             Say(StepNames[step] + " 약이 작용하는 중이에요 (" + wait + "분). 그동안 다른 일을 해요!");
         }
 
+        // 대기 시간 보상과 방치 벌점 (게임 분)
+        const float OverGraceMin = 10f;  // 대기가 끝난 뒤 이만큼은 괜찮음 (게임 분, 약 5초)
+        const int WaitUseBonus = 6;      // 대기 중 다른 일을 하나 끝낼 때마다 보너스 점수
+        const int WaitUseMax = 3;        // 보너스는 최대 3건까지
+
+        // 어떤 일을 끝냈을 때, 지금 대기 중인 다른 손님들의 "대기 활용" 횟수를 올린다
+        void CountWaitUse(Request finished)
+        {
+            for (int i = 0; i < active.Count; i++)
+            {
+                Request o = active[i];
+                if (o != finished && o.processing) o.multi++;
+            }
+        }
+
+        float OverMinutes(Request r)
+        {
+            if (!r.ready) return 0f;
+            return Mathf.Max(0f, (businessElapsed - r.readyAt) / SecPerMinute - OverGraceMin);
+        }
+
         void UpdateProcessing()
         {
             for (int i = 0; i < active.Count; i++)
@@ -606,6 +627,7 @@ namespace SalonIntern
                 {
                     r.processing = false;
                     r.ready = true;
+                    r.readyAt = businessElapsed;
                     r.bodyText.text = r.titleBase + "\n✔ 대기 끝!";
                     r.background.color = new Color(0.78f, 0.93f, 0.78f);
                     r.barFill.anchorMax = new Vector2(1f, 1f);
@@ -617,6 +639,22 @@ namespace SalonIntern
                 r.bodyText.text = r.titleBase + "\n⏱ " + StepNames[step] + " " + leftMin + "분";
                 r.barFill.anchorMax = new Vector2(Mathf.Clamp01(1f - left / r.procTotal), 1f);
                 r.barFillImage.color = new Color(0.35f, 0.60f, 0.90f);
+            }
+        }
+
+        // 대기가 끝난 뒤 오래 두면 카드가 주황색으로 변하고 초과 시간을 보여준다
+        void UpdateOverdue()
+        {
+            for (int i = 0; i < active.Count; i++)
+            {
+                Request r = active[i];
+                if (!r.ready || r.seated == null) continue;
+                float over = OverMinutes(r);
+                if (over <= 0f) continue;
+                int step = r.route[r.routeIdx - 1];
+                r.bodyText.text = r.titleBase + "\n⚠ " + StepNames[step] + " 약 과해요 +" + Mathf.CeilToInt(over) + "분";
+                r.background.color = new Color(0.98f, 0.82f, 0.60f);
+                r.barFillImage.color = new Color(0.90f, 0.50f, 0.20f);
             }
         }
 
@@ -676,7 +714,12 @@ namespace SalonIntern
                     int left = Mathf.CeilToInt((r.procEnd - businessElapsed) / SecPerMinute);
                     SetHeadLabel(r.seated, "⏱ " + Mathf.Max(0, left) + "분", blue);
                 }
-                else if (r.ready) SetHeadLabel(r.seated, "대기 끝!", new Color(0.10f, 0.50f, 0.20f));
+                else if (r.ready)
+                {
+                    float over = OverMinutes(r);
+                    if (over > 0f) SetHeadLabel(r.seated, "⚠ +" + Mathf.CeilToInt(over) + "분", new Color(0.80f, 0.35f, 0.05f));
+                    else SetHeadLabel(r.seated, "대기 끝!", new Color(0.10f, 0.50f, 0.20f));
+                }
                 else SetHeadLabel(r.seated, "", dark);
             }
         }
@@ -685,6 +728,27 @@ namespace SalonIntern
         void FinishPickup(Request task)
         {
             task.pickup = false;
+
+            // 대기 시간을 알뜰하게 썼으면 보너스, 너무 오래 방치했으면 만족도 깎임
+            float over = OverMinutes(task);
+            string settle = "";
+            if (task.multi > 0)
+            {
+                int bonus = WaitUseBonus * Mathf.Min(task.multi, WaitUseMax);
+                score += bonus;
+                settle += "  대기 시간 활용! +" + bonus + "점";
+            }
+            if (over > 0f)
+            {
+                int pct = Mathf.Clamp(Mathf.RoundToInt(100f - over * 4f), 20, 100);
+                task.satSum += pct;
+                task.satCount++;
+                settle += "  약이 과했어요 (만족도 하락)";
+            }
+            task.multi = 0;
+            if (settle.Length > 0) Toast((over > 0f ? "⚠ " : "✔ ") + task.designer.name + " 선생님 손님" + settle, over <= 0f);
+            RefreshTop();
+
             task.ready = false;
             task.bodyText.text = task.titleBase;
             task.background.color = task.baseColor;
