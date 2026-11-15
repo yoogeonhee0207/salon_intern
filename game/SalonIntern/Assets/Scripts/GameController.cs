@@ -390,6 +390,7 @@ namespace SalonIntern
 
             morningPanel.gameObject.SetActive(false);
             Say("영업 시작! 말풍선을 눌러 요청을 처리하세요.");
+            if (npcs.Count > 0) NpcSpeak(npcs[Random.Range(0, npcs.Count)], LineIntro);   // 아침 소개: 인턴 한 명이 한마디
             RefreshTop();
             if (!introShown)
             {
@@ -606,6 +607,8 @@ namespace SalonIntern
                 }
             }
 
+            Button upBtn = UiFactory.MakeButton("UpgradeOpen", shopPanel, "매장 업그레이드", 26, new Color(0.60f, 0.50f, 0.30f), OpenUpgradeShop);
+            UiFactory.Stretch(upBtn.GetComponent<RectTransform>(), 0.74f, 0.905f, 0.98f, 0.985f);
             BuildSnackRow(shopPanel, 0.87f - CursorSkins.ToolCount * 0.088f - 0.080f, 0.87f - CursorSkins.ToolCount * 0.088f);
 
             Button close = UiFactory.MakeButton("ShopClose", shopPanel, "닫기", 32, new Color(0.30f, 0.60f, 0.45f), CloseShop);
@@ -614,6 +617,8 @@ namespace SalonIntern
 
         void CloseShop()
         {
+            if (upgradePanel != null) Destroy(upgradePanel.gameObject);
+            upgradePanel = null;
             if (shopPanel != null) Destroy(shopPanel.gameObject);
             shopPanel = null;
             ApplyLook();
@@ -1045,7 +1050,7 @@ namespace SalonIntern
                 DesignerData d = designers[r];
                 bool isPicked = picked.Contains(d);
                 int row = r;
-                Image nameCell = GridCell(0f, nameW, r + 1, rowH, (isPicked ? "✔ " : "") + d.name + " · " + d.specialty + HeartText(d), isPicked ? pickedBg : nameBg, TextDark, 20);
+                Image nameCell = GridCell(0f, nameW, r + 1, rowH, (isPicked ? "✔ " : "") + d.name + TraitMark(d) + " · " + d.specialty + HeartText(d), isPicked ? pickedBg : nameBg, TextDark, 20);
                 if (interactive)
                 {
                     Button nameButton = nameCell.gameObject.AddComponent<Button>();
@@ -1139,7 +1144,9 @@ namespace SalonIntern
         RectTransform restChoicePanel;
 
         // 재료실: 수건·도구·음료·청소용품. 시간이 지나거나 시술을 하면 줄고, 0이면 혼난다
-        static readonly int[] StockMax = { 30, 20, 20, 5 };  // 수건 30, 도구 20, 음료 20, 청소용품 5
+        static readonly int[] StockMax = { 30, 20, 20, 5 };
+        // 재료실 확장 업그레이드: 수건·도구·음료 단계당 +10, 청소용품 단계당 +2
+        int StockMaxOf(int k) { return StockMax[k] + upgrades[0] * (k == 3 ? 2 : 10); }  // 수건 30, 도구 20, 음료 20, 청소용품 5
         const int ScoldSupplyPenalty = 10;
         static readonly string[] StockNames = { "수건", "도구", "음료", "청소용품" };
         static readonly string[] StockActions = { "수건 접기", "도구 정리", "음료 채우기", "청소용품 채우기" };
@@ -1229,14 +1236,20 @@ namespace SalonIntern
         // 재고가 최대의 20% 이하(최소 1개)면 부족 경고 색
         bool LowStock(int k)
         {
-            return stock[k] <= Mathf.Max(1, StockMax[k] / 5);
+            return stock[k] <= Mathf.Max(1, StockMaxOf(k) / 5);
+        }
+
+        // 업그레이드로 상한이 늘면 부족한 만큼을 바로 채워준다 (이미 가득이던 칸만 새 상한까지 채운다)
+        void FillStockToMax()
+        {
+            for (int k = 0; k < stock.Length; k++) stock[k] = StockMaxOf(k);
         }
 
         void InitStocks()
         {
             for (int k = 0; k < stock.Length; k++)
             {
-                stock[k] = StockMax[k];
+                stock[k] = StockMaxOf(k);
                 stockDrain[k] = Random.Range(StockDrainMin[k], StockDrainMax[k]);
                 scoldCooldown[k] = 0f;
             }
@@ -1297,8 +1310,8 @@ namespace SalonIntern
             for (int i = 0; i < StockNames.Length; i++)
             {
                 int kind = i;
-                bool needs = stock[i] < StockMax[i];
-                string text = StockActions[i] + "\n\n" + StockNames[i] + " " + stock[i] + " / " + StockMax[i]
+                bool needs = stock[i] < StockMaxOf(i);
+                string text = StockActions[i] + "\n\n" + StockNames[i] + " " + stock[i] + " / " + StockMaxOf(i)
                     + "\n\n" + (needs ? "전부 채우기 (" + RefillMinutes[i] + "분)" : "가득 찼어요");
                 Button b = UiFactory.MakeButton("Stock_" + StockNames[i], dim.transform, text, 30,
                     LowStock(i) ? new Color(0.75f, 0.35f, 0.35f) : new Color(0.45f, 0.60f, 0.45f), () => PickRefill(kind));
@@ -1344,7 +1357,7 @@ namespace SalonIntern
 
             if (refillProgress >= 1f)
             {
-                stock[k] = StockMax[k];
+                stock[k] = StockMaxOf(k);
                 refilling = false;
                 AddXp(1); // 한 번 다 채울 때마다 XP +1
                 dayRefills++;
@@ -1353,7 +1366,7 @@ namespace SalonIntern
             }
 
             // 채우는 중에는 조금씩 차오르고, 중간에 나가면 찬 만큼만 남는다
-            int target = refillStartStock + Mathf.FloorToInt(refillProgress * (StockMax[k] - refillStartStock));
+            int target = refillStartStock + Mathf.FloorToInt(refillProgress * (StockMaxOf(k) - refillStartStock));
             if (target > stock[k]) stock[k] = target;
         }
 
@@ -1363,7 +1376,7 @@ namespace SalonIntern
             string t = "";
             for (int k = 0; k < stock.Length; k++)
             {
-                string line = StockNames[k] + " " + stock[k] + "/" + StockMax[k];
+                string line = StockNames[k] + " " + stock[k] + "/" + StockMaxOf(k);
                 t += (LowStock(k) ? "<color=#C00000>" + line + "</color>" : line) + "\n";
             }
             supplyRoomText.text = t;
@@ -1390,7 +1403,7 @@ namespace SalonIntern
             for (int i = 0; i < RestNames.Length; i++)
             {
                 int kind = i;
-                int amount = (i == 0 && lunch) ? Mathf.RoundToInt(RestRecover[i] * 1.5f) : RestRecover[i];
+                int amount = Mathf.RoundToInt(((i == 0 && lunch) ? RestRecover[i] * 1.5f : RestRecover[i]) * SofaMult());
                 bool enough = restBudget >= RestMinutes[i];
                 string text = RestNames[i] + "\n\n" + RestMinutes[i] + "분 소요\n피로도 -" + amount
                     + "\n\n" + (enough ? RestNotes[i] : "(휴게시간 부족)");
@@ -1420,7 +1433,7 @@ namespace SalonIntern
             restKind = kind;
             int minutes = RestMinutes[kind];
             float amount = RestRecover[kind] * ((kind == 0 && IsLunchTime()) ? 1.5f : 1f);
-            amount = ApplySnack(amount);
+            amount = ApplySnack(amount) * SofaMult();
 
             fatigue = Mathf.Max(0f, fatigue - amount);
             restBudget = Mathf.Max(0f, restBudget - minutes);
@@ -2172,6 +2185,8 @@ namespace SalonIntern
                 {
                     float left = Mathf.Clamp01(r.remaining / r.timeLimit);
                     waitDelta = left >= WaitFastRatio ? WaitFastBonus : (left < WaitSlowRatio ? -WaitSlowPenalty : 0);
+                    if (waitDelta < 0 && HasTrait(r.designer, "느긋함")) waitDelta = 0; // 느긋한 선생님은 손님이 오래 기다려도 개의치 않는다
+                    if (left >= 0.5f && HasTrait(r.designer, "급함")) waitDelta += 3;
                 }
                 int gained = Mathf.RoundToInt(StepScore(r) * mult) + (r.isVip ? 30 : (r.isReserved ? 10 : 0)) + friendBonus + assignBonus + helpBonus + waitDelta;
                 gained = Mathf.Max(0, gained + OnRequestCompleted(r, sat));
@@ -2187,7 +2202,7 @@ namespace SalonIntern
                     : (sat >= 85 ? 2 : (sat >= 60 ? 1 : (sat >= 30 ? 1 : 0)));
                 AddXp(xpGain);
                 Say(OwnerTitle(r) + "의 " + r.label + " 완료!" + (lastReaction.Length > 0 ? "  " + lastReaction : ""));
-                Toast("✔ " + OwnerTitle(r) + "의 " + r.label + " 완료!  만족도 " + satGrade + "   +" + gained + "점  XP +" + xpGain + (assignBonus > 0 ? "  (맡은 일 +5)" : "") + (helpBonus > 0 ? "  (동료 대신 +10)" : "") + (waitDelta > 0 ? "  (빨라요 +" + waitDelta + ")" : (waitDelta < 0 ? "  (오래 기다렸어요 " + waitDelta + ")" : "")) + (closeDelta > 0 ? "  ♥친분 +" + closeDelta : (closeDelta < 0 ? "  ♥친분 " + closeDelta : "")), sat >= 30);
+                Toast("✔ " + OwnerTitle(r) + "의 " + r.label + " 완료!  만족도 " + satGrade + "   +" + gained + "점  XP +" + xpGain + (assignBonus > 0 ? "  (맡은 일 +5)" : "") + (helpBonus > 0 ? "  (동료 대신 +10)" : "") + (waitDelta > 0 ? "  (빨라요 +" + waitDelta + ")" : (waitDelta < 0 ? "  (오래 기다렸어요 " + waitDelta + ")" : "")) + traitNote + (closeDelta > 0 ? "  ♥친분 +" + closeDelta : (closeDelta < 0 ? "  ♥친분 " + closeDelta : "")), sat >= 30);
             }
             RemoveRequest(r);
             RefreshTop();

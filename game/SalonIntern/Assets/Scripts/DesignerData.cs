@@ -10,6 +10,8 @@ namespace SalonIntern
         public int id;
         public string name;
         public string specialty;
+        public string trait;   // 성격 태그: 급함/느긋함/완벽주의/다정함
+        public string intro;   // 한 줄 소개
 
         // 요청 확률 가중치 (기획서 9장 특기표)
         public int chores;

@@ -226,6 +226,11 @@ namespace SalonIntern
             return CustomerTypes[r.customerType] + " 손님 " + r.customerName + ": \"" + r.customerLine + "\"";
         }
 
+        string traitNote = "";
+        readonly HashSet<int> introSeen = new HashSet<int>();
+        bool HasTrait(DesignerData d, string t) { return d != null && d.trait == t; }
+        string TraitMark(DesignerData d) { return (d != null && !string.IsNullOrEmpty(d.trait)) ? "[" + d.trait.Substring(0, 1) + "]" : ""; }
+
         // 시술 완료 때 불러서 손님 반응, 보너스 점수를 돌려준다
         int OnRequestCompleted(Request r, int sat)
         {
@@ -247,6 +252,14 @@ namespace SalonIntern
                 else if (r.customerType == 3 && sat >= 60) AddCloseness(r.designer, 1f);       // 아이 손님: 선생님이 흐뭇해함
                 else if (r.customerType == 4) bonus += sat >= 60 ? 6 : -4;                      // 급한 손님: 시간이 짧은 대신 잘 끝내면 보너스, 못 끝내면 감점
                 else if (r.customerType == 5 && sat >= 60) { bonus += 3; AddCloseness(r.designer, 2f); } // 단골 손님: 팁과 친분
+            }
+
+            traitNote = "";
+            if (r.designer != null && !IsCutSeat(r.designer) && !r.npcOnly)
+            {
+                if (HasTrait(r.designer, "완벽주의")) { int tb = sat >= 85 ? 4 : (sat < 60 ? -4 : 0); bonus += tb; if (tb != 0) traitNote = "  (완벽주의 " + (tb > 0 ? "+" : "") + tb + ")"; }
+                else if (HasTrait(r.designer, "다정함") && sat >= 60) { bonus += 2; AddCloseness(r.designer, 1f); traitNote = "  (다정함 +2)"; }
+                if (!string.IsNullOrEmpty(r.designer.intro) && introSeen.Add(r.designer.id)) traitNote += "\n" + r.designer.name + " 선생님[" + r.designer.trait + "]: " + r.designer.intro;
             }
 
             if (r.isInspector)
@@ -297,7 +310,82 @@ namespace SalonIntern
 
         float FatigueMult()
         {
-            return LevelConfig.FatigueScale[level] * (buffDays > 0 ? 0.8f : 1f);
+            return LevelConfig.FatigueScale[level] * (buffDays > 0 ? 0.8f : 1f) * (1f - 0.05f * upgrades[2]);
+        }
+
+        // ---------- 매장 업그레이드 (포인트 쓸 곳) ----------
+
+        // 0 재료실 확장, 1 휴게실 소파, 2 편한 신발. 단계는 0~3
+        readonly int[] upgrades = new int[3];
+        static readonly string[] UpgradeNames = { "재료실 확장", "휴게실 소파", "편한 신발" };
+        static readonly int[] UpgradeCost = { 60, 120, 240 };
+        const int UpgradeMax = 3;
+
+        float SofaMult() { return 1f + 0.1f * upgrades[1]; }
+
+        static string UpgradeEffect(int k, int lv)
+        {
+            if (k == 0) return lv == 0 ? "재고 상한 기본" : "수건·도구·음료 +" + lv * 10 + ", 청소용품 +" + lv * 2;
+            if (k == 1) return lv == 0 ? "휴식 회복량 기본" : "휴식 회복량 +" + lv * 10 + "%";
+            return lv == 0 ? "피로가 쌓이는 속도 기본" : "피로가 쌓이는 속도 -" + lv * 5 + "%";
+        }
+
+        RectTransform upgradePanel;
+
+        void OpenUpgradeShop()
+        {
+            if (upgradePanel != null) Destroy(upgradePanel.gameObject);
+            Image bg = UiFactory.Panel("UpgradePanel", canvasRoot, new Color(0.96f, 0.93f, 0.88f));
+            UiFactory.Stretch(bg.rectTransform, 0.04f, 0.04f, 0.96f, 0.96f);
+            upgradePanel = bg.rectTransform;
+            upgradePanel.SetAsLastSibling();
+
+            Text title = UiFactory.Label("UpgradeTitle", upgradePanel, "매장 업그레이드      보유 포인트 " + points + "P", 40, TextDark, TextAnchor.MiddleCenter);
+            UiFactory.Stretch(title.rectTransform, 0f, 0.86f, 1f, 0.98f);
+
+            for (int k = 0; k < UpgradeNames.Length; k++)
+            {
+                int item = k;
+                float yMax = 0.82f - k * 0.22f, yMin = yMax - 0.19f;
+                int lv = upgrades[k];
+                Text name = UiFactory.Label("UpName", upgradePanel, UpgradeNames[k] + "   " + lv + " / " + UpgradeMax + "단계", 32, TextDark, TextAnchor.MiddleLeft);
+                UiFactory.Stretch(name.rectTransform, 0.04f, yMin + 0.09f, 0.60f, yMax);
+                string nowTxt = "지금: " + UpgradeEffect(k, lv) + (lv < UpgradeMax ? "   →   다음: " + UpgradeEffect(k, lv + 1) : "   (최대)");
+                Text desc = UiFactory.Label("UpDesc", upgradePanel, nowTxt, 24, new Color(0.35f, 0.30f, 0.28f), TextAnchor.MiddleLeft);
+                UiFactory.Stretch(desc.rectTransform, 0.04f, yMin, 0.62f, yMin + 0.10f);
+
+                bool maxed = lv >= UpgradeMax;
+                int cost = maxed ? 0 : UpgradeCost[lv];
+                string btnText = maxed ? "최대 단계" : (points >= cost ? cost + "P 구매" : cost + "P (부족)");
+                Button b = UiFactory.MakeButton("UpBuy", upgradePanel, btnText, 30,
+                    maxed ? new Color(0.30f, 0.60f, 0.45f) : (points >= cost ? new Color(0.35f, 0.50f, 0.65f) : new Color(0.55f, 0.45f, 0.40f)),
+                    () => BuyUpgrade(item));
+                b.interactable = !maxed;
+                UiFactory.Stretch(b.GetComponent<RectTransform>(), 0.66f, yMin + 0.02f, 0.96f, yMax - 0.02f);
+            }
+
+            Button back = UiFactory.MakeButton("UpgradeBack", upgradePanel, "상점으로", 32, new Color(0.30f, 0.60f, 0.45f), CloseUpgradeShop);
+            UiFactory.Stretch(back.GetComponent<RectTransform>(), 0.38f, 0.02f, 0.62f, 0.10f);
+        }
+
+        void CloseUpgradeShop()
+        {
+            if (upgradePanel != null) Destroy(upgradePanel.gameObject);
+            upgradePanel = null;
+            OpenShop();
+        }
+
+        void BuyUpgrade(int k)
+        {
+            if (upgrades[k] >= UpgradeMax) return;
+            int cost = UpgradeCost[upgrades[k]];
+            if (points < cost) { Say("포인트가 부족해요. (" + cost + "P 필요)"); return; }
+            points -= cost;
+            upgrades[k]++;
+            Sfx.Play(Sfx.Kind.Pop);
+            Say(UpgradeNames[k] + " " + upgrades[k] + "단계!  " + UpgradeEffect(k, upgrades[k]));
+            if (k == 0) FillStockToMax();   // 재료실을 넓히면 새로 생긴 칸도 채워준다
+            OpenUpgradeShop();
         }
 
         float ApplySnack(float amount)
@@ -776,7 +864,7 @@ namespace SalonIntern
         {
             Image panel = UiFactory.Panel("StaminaPanel", mapArea, new Color(1f, 1f, 1f, 0.55f));
             panel.raycastTarget = false;
-            PlaceCenter(panel.rectTransform, new Vector2(-790f, 252f), new Vector2(196f, 150f));
+            PlaceCenter(panel.rectTransform, new Vector2(-757f, 252f), new Vector2(262f, 150f));
             Text title = UiFactory.Label("StaminaTitle", panel.transform, "스태미너", 20, TextDark, TextAnchor.UpperCenter);
             title.raycastTarget = false;
             title.rectTransform.offsetMax = new Vector2(0f, -4f);
@@ -786,22 +874,22 @@ namespace SalonIntern
                 staNames[i] = UiFactory.Label("StaName" + i, panel.transform, "", 18, TextDark, TextAnchor.MiddleLeft);
                 staNames[i].raycastTarget = false;
                 staNames[i].horizontalOverflow = HorizontalWrapMode.Overflow;
-                UiFactory.Stretch(staNames[i].rectTransform, 0.04f, y0, 0.36f, y1);
+                UiFactory.Stretch(staNames[i].rectTransform, 0.03f, y0, 0.52f, y1);
                 Image bg = UiFactory.Panel("StaBar" + i, panel.transform, new Color(0.25f, 0.25f, 0.30f, 0.55f));
                 bg.raycastTarget = false;
-                UiFactory.Stretch(bg.rectTransform, 0.37f, y0 + 0.04f, 0.80f, y1 - 0.04f);
+                UiFactory.Stretch(bg.rectTransform, 0.53f, y0 + 0.04f, 0.84f, y1 - 0.04f);
                 staFills[i] = UiFactory.Panel("StaFill", bg.transform, new Color(0.35f, 0.75f, 0.45f));
                 staFills[i].raycastTarget = false;
                 UiFactory.Stretch(staFills[i].rectTransform, 0f, 0f, 1f, 1f);
                 staValues[i] = UiFactory.Label("StaValue" + i, panel.transform, "", 18, TextDark, TextAnchor.MiddleRight);
                 staValues[i].raycastTarget = false;
-                UiFactory.Stretch(staValues[i].rectTransform, 0.80f, y0, 0.97f, y1);
+                UiFactory.Stretch(staValues[i].rectTransform, 0.84f, y0, 0.97f, y1);
                 if (i > 0)
                 {
                     // 내가 인턴장일 때(Lv.5~) 인턴을 지금 쉬러 보낸다
                     int idx = i - 1;
                     Button rb = UiFactory.MakeButton("StaRest" + i, panel.transform, "휴식", 18, new Color(0.35f, 0.55f, 0.70f), () => SendInternToRest(idx));
-                    UiFactory.Stretch(rb.GetComponent<RectTransform>(), 1.03f, y0 + 0.01f, 1.42f, y1 - 0.01f);
+                    UiFactory.Stretch(rb.GetComponent<RectTransform>(), 1.03f, y0 + 0.01f, 1.34f, y1 - 0.01f);
                     staRestButtons[i] = rb;
                     rb.gameObject.SetActive(false);
                 }
@@ -826,7 +914,7 @@ namespace SalonIntern
                 if (staNames[i] == null) continue;
                 float v; string who;
                 if (i == 0) { v = 100f - fatigue; who = level >= 5 ? "나(인턴장)" : "나"; }
-                else if (i - 1 < npcs.Count) { v = npcs[i - 1].stamina; who = npcs[i - 1].role; }
+                else if (i - 1 < npcs.Count) { v = npcs[i - 1].stamina; who = npcs[i - 1].role + (NpcTraitName(npcs[i - 1]).Length > 0 ? "·" + NpcTraitName(npcs[i - 1]) : ""); }
                 else { staNames[i].text = ""; staValues[i].text = ""; staFills[i].transform.parent.gameObject.SetActive(false); continue; }
                 v = Mathf.Clamp(v, 0f, 100f);
                 staFills[i].transform.parent.gameObject.SetActive(true);
@@ -1228,6 +1316,8 @@ namespace SalonIntern
             d.perfectDays = perfectDays;
             d.goalsDone = goalsDone;
             d.snackCount = snackCount;
+            d.upgrades = (int[])upgrades.Clone();
+            d.internTraits = (int[])internTrait.Clone();
             d.buffDays = buffDays;
             d.weekScore = weekScore;
             d.weekTarget = weekTarget;
@@ -1245,6 +1335,8 @@ namespace SalonIntern
             perfectDays = d.perfectDays;
             goalsDone = d.goalsDone;
             snackCount = d.snackCount;
+            for (int i = 0; i < upgrades.Length; i++) upgrades[i] = (d.upgrades != null && i < d.upgrades.Length) ? Mathf.Clamp(d.upgrades[i], 0, UpgradeMax) : 0;
+            for (int i = 0; i < internTrait.Length; i++) internTrait[i] = (d.internTraits != null && i < d.internTraits.Length) ? d.internTraits[i] : -1;
             buffDays = d.buffDays;
             weekScore = d.weekScore;
             weekTarget = d.weekTarget;
@@ -1263,6 +1355,8 @@ namespace SalonIntern
             perfectDays = 0;
             goalsDone = 0;
             snackCount = 0;
+            for (int i = 0; i < upgrades.Length; i++) upgrades[i] = 0;
+            for (int i = 0; i < internTrait.Length; i++) internTrait[i] = -1;
             buffDays = 0;
             weekScore = 0;
             weekTarget = 0;

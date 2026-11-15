@@ -40,6 +40,8 @@ namespace SalonIntern
         public int weekTarget;
         public bool[] achievements;
         public int[] eventSeen;
+        public int[] internTraits;   // 인턴 3명의 성격 번호 (-1이면 아직 안 정해짐)
+        public int[] upgrades;   // 매장 업그레이드 단계 (재료실, 휴게실 소파, 편한 신발)
 
         // 저장 칸 3개: 칸 0은 예전 저장 키를 그대로 써서 기존 진행이 첫 칸으로 이어진다
         public const int SlotCount = 3;

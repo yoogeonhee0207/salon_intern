@@ -11,11 +11,13 @@
       "dry": 40,
       "speed": 0.7,
       "patience": "낮음",
-      "patienceMultiplier": 0.8
+      "patienceMultiplier": 0.8,
+      "trait": "급함",
+      "intro": "빨리빨리가 입버릇인 베테랑이에요."
     },
     {
       "id": 2,
-      "name": "디자이너2",
+      "name": "윤서연",
       "specialty": "펌 전문",
       "chores": 20,
       "shampoo": 15,
@@ -24,11 +26,13 @@
       "dry": 10,
       "speed": 1.3,
       "patience": "높음",
-      "patienceMultiplier": 1.25
+      "patienceMultiplier": 1.25,
+      "trait": "느긋함",
+      "intro": "롯드 하나도 차분하게 마는 펌 장인이에요."
     },
     {
       "id": 3,
-      "name": "디자이너3",
+      "name": "정민호",
       "specialty": "일반 염색",
       "chores": 20,
       "shampoo": 15,
@@ -37,11 +41,13 @@
       "dry": 10,
       "speed": 1.0,
       "patience": "보통",
-      "patienceMultiplier": 1.0
+      "patienceMultiplier": 1.0,
+      "trait": "완벽주의",
+      "intro": "색이 한 톤만 달라도 다시 하자고 해요."
     },
     {
       "id": 4,
-      "name": "디자이너4",
+      "name": "오하늘",
       "specialty": "탈색/패션컬러",
       "chores": 15,
       "shampoo": 10,
@@ -50,7 +56,9 @@
       "dry": 5,
       "speed": 1.5,
       "patience": "높음",
-      "patienceMultiplier": 1.25
+      "patienceMultiplier": 1.25,
+      "trait": "다정함",
+      "intro": "손님과 수다 떠는 게 제일 좋대요."
     },
     {
       "id": 5,
@@ -63,11 +71,13 @@
       "dry": 15,
       "speed": 1.0,
       "patience": "보통",
-      "patienceMultiplier": 1.0
+      "patienceMultiplier": 1.0,
+      "trait": "다정함",
+      "intro": "두피 상담만 삼십 분, 마음이 따뜻해요."
     },
     {
       "id": 6,
-      "name": "디자이너6",
+      "name": "류가온",
       "specialty": "업스타일/드라이",
       "chores": 15,
       "shampoo": 15,
@@ -76,7 +86,9 @@
       "dry": 70,
       "speed": 0.9,
       "patience": "낮음",
-      "patienceMultiplier": 0.8
+      "patienceMultiplier": 0.8,
+      "trait": "급함",
+      "intro": "드라이는 속도가 생명이라고 말해요."
     },
     {
       "id": 7,
@@ -89,7 +101,9 @@
       "dry": 25,
       "speed": 1.0,
       "patience": "매우 낮음",
-      "patienceMultiplier": 0.6
+      "patienceMultiplier": 0.6,
+      "trait": "완벽주의",
+      "intro": "수석답게 하나하나 깐깐하게 봐요."
     },
     {
       "id": 11,
@@ -102,7 +116,9 @@
       "dry": 20,
       "speed": 1.3,
       "patience": "매우 높음",
-      "patienceMultiplier": 1.5
+      "patienceMultiplier": 1.5,
+      "trait": "느긋함",
+      "intro": "서툴러도 서두르지 않는 신입이에요."
     },
     {
       "id": 8,
@@ -115,7 +131,9 @@
       "dry": 30,
       "speed": 1.4,
       "patience": "높음",
-      "patienceMultiplier": 1.25
+      "patienceMultiplier": 1.25,
+      "trait": "다정함",
+      "intro": "말수는 적어도 챙겨주는 건 잘해요."
     },
     {
       "id": 12,
@@ -128,7 +146,9 @@
       "dry": 15,
       "speed": 1.4,
       "patience": "보통",
-      "patienceMultiplier": 1.0
+      "patienceMultiplier": 1.0,
+      "trait": "완벽주의",
+      "intro": "컬러와 펌의 균형에 진심이에요."
     }
   ]
 }

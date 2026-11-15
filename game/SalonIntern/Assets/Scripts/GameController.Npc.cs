@@ -118,12 +118,15 @@ namespace SalonIntern
         // 내 레벨에 맞춰 동료 인턴의 레벨, 속도, 솜씨를 정한다
         void ApplyNpcRoster()
         {
+            EnsureInternTraits();
             int[] lv = LevelConfig.NpcLevels[Mathf.Clamp(level, 0, LevelConfig.NpcLevels.Length - 1)];
             for (int i = 0; i < npcs.Count && i < lv.Length; i++)
             {
                 npcs[i].level = lv[i];
                 npcs[i].workMult = 0.7f + 0.15f * (6 - lv[i]); // 레벨이 높을수록 빠르다 (Lv.6 0.7배 ~ Lv.3 1.15배)
                 npcs[i].sat = 55 + 6 * lv[i];
+                InternTrait tr = TraitOf(npcs[i]);
+                if (tr != null) { npcs[i].workMult *= tr.work; npcs[i].sat = Mathf.Clamp(npcs[i].sat + tr.sat, 30, 99); }
             }
             // Lv.5부터는 내가 인턴장: 선배 인턴장이 졸업하고 그 자리에 새 막내가 들어온다
             if (npcs.Count > 0)
@@ -436,18 +439,18 @@ namespace SalonIntern
                 if (n.task != null && (!active.Contains(n.task) || n.task.assignee != n.id)) ReleaseNpc(n);
 
                 // 스태미너가 0이 되면 스스로 쉬러 가고, 가득 차면 돌아온다
-                if (n.stamina <= 15f) n.forceRest = true;   // 0이 되기 전에 미리 쉬러 간다
+                if (n.stamina <= 15f && !n.forceRest) { n.forceRest = true; NpcSpeak(n, LineTired); }   // 0이 되기 전에 미리 쉬러 간다
                 else if (n.forceRest && n.stamina >= 100f) n.forceRest = false;
                 bool brk = NpcOnBreak(n) || n.forceRest;
                 if (brk != n.resting)
                 {
                     n.resting = brk;
-                    if (brk) Toast("☕ " + Ga(n.role) + " 휴게실에 가요! 쉬는 동안 고르지 않은 선생님 일도 도와주면 추가 점수 +10", true);
+                    if (brk) { Toast("☕ " + Ga(n.role) + " 휴게실에 가요! 쉬는 동안 고르지 않은 선생님 일도 도와주면 추가 점수 +10", true); NpcSpeak(n, LineBreak, 0.7f); }
                     else Toast(Ga(n.role) + " 휴게를 마치고 돌아와요", false);
                 }
                 // 스태미너: 일하는 동안 줄고(재료 채우기 포함), 휴게 중에는 찬다
-                if (n.resting && n.task == null) n.stamina = Mathf.Min(100f, n.stamina + (100f / 30f) * dt);
-                else if (n.task != null || n.refillKind >= 0) n.stamina = Mathf.Max(3f, n.stamina - 0.4f * dt);   // 하던 일을 마치는 동안에도 0까지는 안 내려간다
+                if (n.resting && n.task == null) n.stamina = Mathf.Min(100f, n.stamina + (100f / 30f) * dt * (TraitOf(n) != null ? TraitOf(n).rest : 1f));
+                else if (n.task != null || n.refillKind >= 0) n.stamina = Mathf.Max(3f, n.stamina - 0.4f * dt * (TraitOf(n) != null ? TraitOf(n).drain : 1f));   // 하던 일을 마치는 동안에도 0까지는 안 내려간다
 
                 if (n.task == null && !n.resting && n.refillKind < 0)
                 {
@@ -495,6 +498,7 @@ namespace SalonIntern
                         {
                             SetAssignee(pick, n.id);
                             Toast(Ga(n.role) + " " + OwnerTitle(pick) + " " + Reul(pick.label) + " 도와줘요", true);
+                            NpcSpeak(n, LineHelp, 0.4f);
                         }
                     }
                     if (pick != null)
@@ -627,6 +631,7 @@ namespace SalonIntern
 
             // 건수와 점수는 내가 직접 한 일만 센다. 인턴이 끝낸 일은 손님이 만족하고 돌아갈 뿐이다.
             Toast("✔ " + Ga(n.role) + " " + OwnerTitle(r) + "의 " + r.label + " 완료", true);
+            NpcSpeak(n, LineDone, 0.35f);
             RemoveRequest(r);
             RefreshTop();
         }
