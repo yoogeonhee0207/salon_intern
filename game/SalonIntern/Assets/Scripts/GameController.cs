@@ -36,7 +36,7 @@ namespace SalonIntern
             public Text bodyText;
             public Color baseColor;
             public string titleBase;
-            public string customerName; public int customerType; public string customerLine; public bool isInspector;
+            public string customerName; public int customerType; public string customerLine; public bool isInspector; public int inspectorKind;
             public bool started;     // 손님을 모시고 출발했는지
             public int satSum;       // 단계별 완성도(0~100) 합: 손님 만족도 계산용
             public int satCount;
@@ -2064,7 +2064,7 @@ namespace SalonIntern
         void PickUpCustomer()
         {
             if (customerRt != null) Destroy(customerRt.gameObject);
-            int look = playerTask != null ? Mathf.Abs(playerTask.customerType) % 4 : 0;
+            int look = playerTask != null ? LookOf(playerTask.customerType) : 0;
             Image c = Art.Figure("Customer", mapArea, new Color(0.96f, 0.78f, 0.66f), "customer_" + look);
             customerRt = c.rectTransform;
             PlaceCenter(customerRt, playerRt.anchoredPosition + new Vector2(-56f, 0f), new Vector2(84f, 84f));
@@ -2103,7 +2103,7 @@ namespace SalonIntern
                 bool show = req != null && !away;
                 if (kv.Value.gameObject.activeSelf != show) kv.Value.gameObject.SetActive(show);
                 if (!show) continue;
-                int look = Mathf.Abs(req.customerType) % 4;
+                int look = LookOf(req.customerType);
                 int prev;
                 if (!seatedLook.TryGetValue(kv.Key, out prev) || prev != look)
                 {

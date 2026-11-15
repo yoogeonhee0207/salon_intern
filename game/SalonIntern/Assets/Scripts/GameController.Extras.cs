@@ -160,18 +160,33 @@ namespace SalonIntern
 
         // ---------- 손님 성격과 대사, 암행 손님 ----------
 
-        static readonly string[] CustomerTypes = { "일반", "까다로운", "수다쟁이", "아이" };
+        // 0 일반, 1 까다로운, 2 수다쟁이, 3 아이, 4 급한, 5 단골
+        static readonly string[] CustomerTypes = { "일반", "까다로운", "수다쟁이", "아이", "급한", "단골" };
         static readonly string[] Surnames = { "김", "이", "박", "최", "정", "한", "송", "조", "윤", "강" };
         static readonly string[][] GreetingLines =
         {
-            new[] { "안녕하세요, 잘 부탁드려요.", "예약한 손님이에요.", "오늘은 어떻게 해 볼까요?" },
-            new[] { "저번엔 마음에 안 들었는데, 이번엔 잘 해 주세요.", "시간 없으니까 빨리 부탁해요.", "꼼꼼하게 해 주셔야 해요." },
-            new[] { "어머, 새로 온 분이세요? 요즘 날씨가 참 그렇죠?", "있잖아요, 어제 글쎄…", "말 걸어도 괜찮죠?" },
-            new[] { "엄마가 머리 예쁘게 해 달래요!", "가위 소리 무서워요…", "저도 미용사 할 거예요!" },
+            new[] { "안녕하세요, 잘 부탁드려요.", "예약한 손님이에요.", "오늘은 어떻게 해 볼까요?", "머리가 좀 지겨워서 왔어요.", "무난하게 부탁드려요." },
+            new[] { "저번엔 마음에 안 들었는데, 이번엔 잘 해 주세요.", "시간 없으니까 빨리 부탁해요.", "꼼꼼하게 해 주셔야 해요.", "사진이랑 똑같이 나와야 해요.", "물 온도부터 확인해 주세요." },
+            new[] { "어머, 새로 온 분이세요? 요즘 날씨가 참 그렇죠?", "있잖아요, 어제 글쎄…", "말 걸어도 괜찮죠?", "우리 앞집 사람이 말이에요…", "여기 단골 될까 봐요, 호호." },
+            new[] { "엄마가 머리 예쁘게 해 달래요!", "가위 소리 무서워요…", "저도 미용사 할 거예요!", "거품 많이 해 주세요!", "아야, 살살 해 주세요!" },
+            new[] { "저 십 분 뒤에 약속 있어요!", "최대한 빨리요, 기차 시간이 빠듯해요.", "서두르면 안 되는 거 알지만… 서둘러 주세요!", "회의 가는 길이에요, 빠르게요.", "쉬는 시간이 없어서요, 부탁해요!" },
+            new[] { "늘 하던 대로 해 주세요.", "아, 막내님 오랜만이에요. 또 왔어요.", "여기 아니면 머리를 못 맡겨요.", "저번에 해 준 거 아주 좋았어요.", "오늘도 잘 부탁해요, 막내님." },
         };
-        static readonly string[] ReactionGood = { "와, 마음에 쏙 들어요!", "손길이 좋네요. 또 올게요!", "딱 원하던 느낌이에요." };
-        static readonly string[] ReactionOk = { "나쁘지 않네요.", "괜찮은 것 같아요.", "음, 무난하네요." };
-        static readonly string[] ReactionBad = { "음… 조금 아쉬운데요.", "다음엔 더 신경 써 주세요.", "별로예요…" };
+        static readonly string[] ReactionGood = { "와, 마음에 쏙 들어요!", "손길이 좋네요. 또 올게요!", "딱 원하던 느낌이에요.", "거울 보니까 기분이 좋아졌어요.", "친구들한테 여기 소개할래요." };
+        static readonly string[] ReactionOk = { "나쁘지 않네요.", "괜찮은 것 같아요.", "음, 무난하네요.", "이 정도면 됐어요.", "다음엔 더 기대할게요." };
+        static readonly string[] ReactionBad = { "음… 조금 아쉬운데요.", "다음엔 더 신경 써 주세요.", "별로예요…", "생각했던 거랑 다르네요.", "선생님을 불러 주실래요?" };
+        // 성격마다 추가로 섞이는 반응 [성격][0 좋음 / 1 보통 / 2 아쉬움]
+        static readonly string[][][] TypeReactions =
+        {
+            null,
+            new[] { new[] { "흠, 이번엔 합격이에요." }, new[] { "아직 부족하지만 봐 줄게요." }, new[] { "이럴 줄 알았어요. 정말 실망이에요." } },
+            new[] { new[] { "어머, 수다 떨다 보니 예뻐졌네!" }, new[] { "아이고, 이야기하느라 못 봤네요." }, new[] { "말 시킨 건 미안한데… 머리가 좀…" } },
+            new[] { new[] { "우와! 거울 속 내가 딴 사람 같아!" }, new[] { "엄마가 좋아할까?" }, new[] { "엉엉, 이상해요…" } },
+            new[] { new[] { "시간 딱 맞췄네요, 고마워요!" }, new[] { "아슬아슬했어요." }, new[] { "늦었잖아요! 어쩌죠?" } },
+            new[] { new[] { "역시 막내님 솜씨예요." }, new[] { "오늘은 좀 평범하네요." }, new[] { "에이, 오늘은 컨디션이 안 좋았나 봐요." } },
+        };
+
+        static int LookOf(int type) { return type <= 3 ? Mathf.Max(0, type) : (type == 4 ? 1 : 2); }   // 급한 손님은 까다로운 손님 그림, 단골은 수다쟁이 그림을 쓴다
 
         bool inspectorToday;
         string lastReaction = "";
@@ -183,7 +198,7 @@ namespace SalonIntern
             if (!r.isProcedure || r.isMess || r.isLocked) return;
 
             float roll = Random.value;
-            int type = roll < 0.55f ? 0 : (roll < 0.75f ? 1 : (roll < 0.90f ? 2 : 3));
+            int type = roll < 0.45f ? 0 : (roll < 0.60f ? 1 : (roll < 0.72f ? 2 : (roll < 0.80f ? 3 : (roll < 0.90f ? 4 : 5))));
             if (ExtrasTest && !inspectorToday) type = 0;
             r.customerType = type;
             string suffix = type == 3 ? " 어린이" : (type == 1 ? " 여사님" : "씨");
@@ -193,12 +208,14 @@ namespace SalonIntern
 
             if (type == 1) r.timeLimit *= 0.85f;       // 까다로운 손님은 기다려 주지 않는다
             else if (type == 2) r.timeLimit *= 1.15f;  // 수다쟁이 손님은 느긋하다
+            else if (type == 4) r.timeLimit *= 0.7f;   // 급한 손님은 약속이 있다
             r.remaining = r.timeLimit;
 
             // 암행 손님: 평범한 손님인 척한다 (하루 최대 한 명, 3일째부터)
             if ((ExtrasTest || day >= 3) && !inspectorToday && type == 0 && Random.value < (ExtrasTest ? 1f : 0.15f))
             {
                 r.isInspector = true;
+                r.inspectorKind = (day >= 5 && Random.value < 0.4f) ? 1 : 0;   // 0 본사 점검, 1 리뷰 블로거 (Day 5부터)
                 inspectorToday = true;
             }
         }
@@ -216,19 +233,43 @@ namespace SalonIntern
             if (sat >= 60) dayGoodSat++;
 
             int bonus = 0;
-            string[] pool = sat >= 85 ? ReactionGood : (sat >= 60 ? ReactionOk : ReactionBad);
-            string reaction = r.customerName != null ? r.customerName + ": \"" + pool[Random.Range(0, pool.Length)] + "\"" : "";
+            int tier = sat >= 85 ? 0 : (sat >= 60 ? 1 : 2);
+            string[] pool = tier == 0 ? ReactionGood : (tier == 1 ? ReactionOk : ReactionBad);
+            string pick = pool[Random.Range(0, pool.Length)];
+            if (r.customerName != null && r.customerType > 0 && r.customerType < TypeReactions.Length && Random.value < 0.5f)
+                pick = TypeReactions[r.customerType][tier][0];   // 성격 전용 반응을 절반쯤 섞는다
+            string reaction = r.customerName != null ? r.customerName + ": \"" + pick + "\"" : "";
 
             if (r.customerName != null)
             {
                 if (r.customerType == 1) bonus += sat >= 85 ? 12 : (sat < 60 ? -8 : 0);   // 까다로운 손님: 잘하면 큰 보너스, 못하면 감점
                 else if (r.customerType == 2) bonus += 3;                                      // 수다쟁이 손님: 팁
                 else if (r.customerType == 3 && sat >= 60) AddCloseness(r.designer, 1f);       // 아이 손님: 선생님이 흐뭇해함
+                else if (r.customerType == 4) bonus += sat >= 60 ? 6 : -4;                      // 급한 손님: 시간이 짧은 대신 잘 끝내면 보너스, 못 끝내면 감점
+                else if (r.customerType == 5 && sat >= 60) { bonus += 3; AddCloseness(r.designer, 2f); } // 단골 손님: 팁과 친분
             }
 
             if (r.isInspector)
             {
-                if (sat >= 60)
+                if (r.inspectorKind == 1)
+                {
+                    // 리뷰 블로거: 만족도가 높으면 후기가 올라가 포인트를 받고, 낮으면 혹평 후기가 올라간다
+                    if (sat >= 85)
+                    {
+                        bonus += 30;
+                        AddPoints(20);
+                        inspectorPassCount++;
+                        reaction = "알고 보니 유명 리뷰 블로거! 극찬 후기가 올라왔어요. 점수 +30, 포인트 +20";
+                        achieveQueue.Add("리뷰 블로거가 극찬했어요!");
+                    }
+                    else if (sat >= 60) reaction = "알고 보니 리뷰 블로거였어요. 무난한 후기가 올라왔어요.";
+                    else
+                    {
+                        bonus -= 15;
+                        reaction = "알고 보니 리뷰 블로거였어요... 혹평 후기가 올라왔어요. 점수 -15";
+                    }
+                }
+                else if (sat >= 60)
                 {
                     bonus += 40;
                     inspectorPassCount++;
@@ -332,10 +373,10 @@ namespace SalonIntern
 
         static readonly string[][] DirectorLines =
         {
-            new[] { "오늘은 쉬엄쉬엄 하자. 내일은 더 잘할 수 있어.", "누구나 처음엔 그래. 포기하지 마.", "수건부터 다시 접어 볼까?" },
-            new[] { "나쁘지 않았어. 조금만 더 집중해 봐.", "손님들이 기다린 시간을 생각해 보자.", "기본기를 다져. 그게 제일 빨라." },
-            new[] { "잘했어. 선생님들도 칭찬하더라.", "오늘 같은 날이 쌓이면 가위를 잡게 될 거야.", "좋은 하루였어." },
-            new[] { "…", "오늘은 정말 훌륭했어. 내일도 이렇게만.", "인턴이 아니라 벌써 디자이너 같네." },
+            new[] { "오늘은 쉬엄쉬엄 하자. 내일은 더 잘할 수 있어.", "누구나 처음엔 그래. 포기하지 마.", "수건부터 다시 접어 볼까?", "실수는 돈 주고도 못 사는 연습이야.", "푹 자고 와. 내일은 다를 거야." },
+            new[] { "나쁘지 않았어. 조금만 더 집중해 봐.", "손님들이 기다린 시간을 생각해 보자.", "기본기를 다져. 그게 제일 빨라.", "선생님들 손을 잘 봐 둬. 거기 답이 있어.", "한 걸음씩. 서두를 필요 없어." },
+            new[] { "잘했어. 선생님들도 칭찬하더라.", "오늘 같은 날이 쌓이면 가위를 잡게 될 거야.", "좋은 하루였어.", "손이 점점 빨라지는 게 보여.", "손님들이 네 이름을 기억하기 시작했어." },
+            new[] { "…", "오늘은 정말 훌륭했어. 내일도 이렇게만.", "인턴이 아니라 벌써 디자이너 같네.", "본사에서 너 이야기를 묻더라. 자랑스러웠어.", "이런 날은 맛있는 거 먹어야지. 내가 살게." },
         };
 
         string DirectorLine(string grade)
@@ -358,7 +399,7 @@ namespace SalonIntern
 
             return new List<string>
             {
-                "졸업시험 합격!\n\n원장님이 지켜보는 가운데, " + playerName + "님의 가위가 머리카락 사이를 지나가요.\n(" + result.hits + "/" + result.rounds + ")",
+                "졸업시험 합격!\n\n원장님이 지켜보는 가운데, " + playerName + "님의 가위가 머리카락 사이를 지나가요.\n(" + result.hits + "/" + result.rounds + ")" + (result.perfects > 0 ? "  완벽 " + result.perfects + "번!" : ""),
                 "원장님이 천천히 고개를 끄덕여요.\n\n\"" + playerName + ". 수건 접던 막내가 여기까지 왔구나.\"",
                 Ga(friend) + " 눈시울을 붉히며 다가와요.\n\n\"처음 왔을 때가 어제 같은데... 졸업 축하해.\"",
                 salonName + "에 새 막내가 들어왔어요.\n\n수건을 끌어안고 허둥대는 모습이 낯설지 않아요. " + playerName + "님은 가만히 웃으며 가위를 건네요.",
@@ -543,6 +584,8 @@ namespace SalonIntern
 
         int weekScore;
         int weekTarget;
+        int weekMissed;      // 이번 주에 놓친 손님 수
+        int weekSDays;       // 이번 주 S등급 일수
 
         string OnDayEnd(string grade, int dayScore, int target, int dayMissedNow)
         {
@@ -567,14 +610,21 @@ namespace SalonIntern
             // 주간 평가: 7일마다 본사 평가
             weekScore += dayScore;
             weekTarget += target;
+            weekMissed += dayMissedNow;
+            if (grade == "S") weekSDays++;
             if (ExtrasTest || day % 7 == 0)
             {
                 string wg = DayConfig.Grade(weekScore, weekTarget);
                 int wp = wg == "S" ? 100 : (wg == "A" ? 60 : (wg == "B" ? 30 : 10));
                 AddPoints(wp);
                 text += "★ 주간 본사 평가 " + wg + "등급!  포인트 +" + wp + "\n";
+                // 추가 평가 항목: 한 주 동안 한 명도 안 놓쳤거나, S등급을 자주 받았을 때
+                if (weekMissed == 0) { AddPoints(30); text += "   · 이번 주 놓친 손님 0명!  포인트 +30\n"; }
+                if (weekSDays >= 2) { int sp = Mathf.Min(3, weekSDays) * 10; AddPoints(sp); text += "   · S등급 " + weekSDays + "일  포인트 +" + sp + "\n"; }
                 weekScore = 0;
                 weekTarget = 0;
+                weekMissed = 0;
+                weekSDays = 0;
             }
 
             if (buffDays > 0) buffDays--;
@@ -890,7 +940,7 @@ namespace SalonIntern
                 bool show = o != null && !mine && !o.isMess;
                 if (bedFigures[i].gameObject.activeSelf != show) bedFigures[i].gameObject.SetActive(show);
                 if (!show) continue;
-                int look = Mathf.Abs(o.customerType) % 4;
+                int look = LookOf(o.customerType);
                 if (bedLook[i] != look) { bedLook[i] = look; Art.Apply(bedFigures[i], "customer_" + look); }
             }
         }
@@ -917,7 +967,7 @@ namespace SalonIntern
                 bool show = o != null && !mine && !o.isMess;
                 if (chairFigures[i].gameObject.activeSelf != show) chairFigures[i].gameObject.SetActive(show);
                 if (!show) continue;
-                int look = Mathf.Abs(o.customerType) % 4;
+                int look = LookOf(o.customerType);
                 if (chairLook[i] != look) { chairLook[i] = look; Art.Apply(chairFigures[i], "customer_" + look); }
             }
         }
