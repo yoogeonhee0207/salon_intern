@@ -55,9 +55,9 @@ namespace SalonIntern
             UiFactory.Stretch(stageA, 0f, 0f, 1f, 1f);
 
             LabelAt("목표 색", new Vector2(-300f, 290f), new Vector2(300f, 50f), 34, Color.white).transform.SetParent(stageA, false);
-            Image targetSwatch = Box(stageA, new Vector2(-300f, 190f), new Vector2(260f, 130f), targetColor);
+            Image targetSwatch = Box(stageA, new Vector2(-300f, 190f), new Vector2(260f, 130f), targetColor, "ui_bubble", 30f);
             LabelAt("내가 섞은 색", new Vector2(300f, 290f), new Vector2(300f, 50f), 34, Color.white).transform.SetParent(stageA, false);
-            currentSwatch = Box(stageA, new Vector2(300f, 190f), new Vector2(260f, 130f), Mix(values));
+            currentSwatch = Box(stageA, new Vector2(300f, 190f), new Vector2(260f, 130f), Mix(values), "ui_bubble", 30f);
 
             for (int i = 0; i < 3; i++)
             {
@@ -86,7 +86,7 @@ namespace SalonIntern
                 {
                     int i = r * Cols + c;
                     centers[i] = new Vector2((c - (Cols - 1) / 2f) * 170f, ((Rows - 1) / 2f - r) * 110f);
-                    cells[i] = Box(pad.transform, centers[i], new Vector2(160f, 100f), new Color(0.88f, 0.84f, 0.78f));
+                    cells[i] = Box(pad.transform, centers[i], new Vector2(160f, 100f), new Color(0.88f, 0.84f, 0.78f), "hair_block");
                 }
             }
             LabelAt("▲ 두피(뿌리)", new Vector2(0f, 250f), new Vector2(400f, 40f), 28, new Color(0.85f, 0.85f, 0.9f)).transform.SetParent(pad.transform, false);

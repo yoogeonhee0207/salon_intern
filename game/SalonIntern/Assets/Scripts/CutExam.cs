@@ -40,8 +40,8 @@ namespace SalonIntern
             {
                 float x = -560f + i * 20f;
                 guide[i] = new Vector2(x, 110f * Mathf.Sin(x / 150f));
-                Dot(pad.transform, guide[i], i == 0 || i == PointCount - 1 ? 34f : 12f,
-                    i == 0 ? new Color(1f, 0.85f, 0.25f) : (i == PointCount - 1 ? new Color(0.30f, 0.75f, 0.45f) : new Color(0.45f, 0.40f, 0.35f)));
+                Dot(pad.transform, guide[i], i == 0 || i == PointCount - 1 ? 38f : 16f,
+                    i == 0 ? new Color(1f, 0.85f, 0.25f) : (i == PointCount - 1 ? new Color(0.30f, 0.75f, 0.45f) : new Color(0.45f, 0.40f, 0.35f)), "bead");
             }
             SetCursor(CursorKind.Scissors);
             UpdateInfo();
@@ -96,7 +96,7 @@ namespace SalonIntern
             if ((p - lastDot).magnitude > 14f)
             {
                 lastDot = p;
-                trail.Add(Dot(pad.transform, p, 14f, off ? new Color(0.90f, 0.30f, 0.30f) : new Color(0.30f, 0.75f, 0.45f)));
+                trail.Add(Dot(pad.transform, p, 18f, off ? new Color(0.90f, 0.30f, 0.30f) : new Color(0.30f, 0.75f, 0.45f), "bead"));
             }
 
             if (reached >= PointCount - 2)

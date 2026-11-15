@@ -61,8 +61,10 @@ namespace SalonIntern
 
             // 남은 시간 막대
             Image barBg = UiFactory.Panel("TimeBg", self, new Color(0.30f, 0.30f, 0.35f));
+            Art.Apply(barBg, "ui_bubble", 14f);
             UiFactory.Stretch(barBg.rectTransform, 0.2f, 0.875f, 0.8f, 0.905f);
             Image fill = UiFactory.Panel("TimeFill", barBg.transform, new Color(0.30f, 0.72f, 0.40f));
+            Art.Apply(fill, "ui_bubble", 14f);
             UiFactory.Stretch(fill.rectTransform, 0f, 0f, 1f, 1f);
             barFill = fill.rectTransform;
 
@@ -71,6 +73,7 @@ namespace SalonIntern
 
             // 청소하는 바닥
             Image padImg = UiFactory.Panel("Pad", self, new Color(0.95f, 0.90f, 0.82f));
+            Art.Apply(padImg, "ui_panel", 32f);
             pad = padImg.rectTransform;
             SetCenter(pad, Vector2.zero, PadSize);
             SweepPad handler = padImg.gameObject.AddComponent<SweepPad>();
@@ -78,6 +81,7 @@ namespace SalonIntern
 
             // 쓰레기통 (바닥 오른쪽 아래)
             Image binImg = UiFactory.Panel("Bin", pad, new Color(0.35f, 0.38f, 0.45f));
+            if (Art.Apply(binImg, "trash_bin")) binImg.color = Color.white;
             binImg.raycastTarget = false;
             bin = binImg.rectTransform;
             SetCenter(bin, new Vector2(PadSize.x / 2f - BinSize.x / 2f - 20f, -PadSize.y / 2f + BinSize.y / 2f + 20f), BinSize);
@@ -97,14 +101,16 @@ namespace SalonIntern
                 } while (InBin(pos, 60f) && guard < 50);
 
                 Image h = UiFactory.Panel("Hair", pad, new Color(0.15f, 0.10f, 0.08f));
+                Art.Apply(h, "hair_clump");
                 h.raycastTarget = false;
-                SetCenter(h.rectTransform, pos, new Vector2(70f, 10f));
+                SetCenter(h.rectTransform, pos, new Vector2(80f, 24f));
                 h.rectTransform.localRotation = Quaternion.Euler(0f, 0f, UnityEngine.Random.Range(0f, 180f));
                 hairs.Add(h.rectTransform);
             }
 
             // 빗자루 (누르고 있는 동안 손가락을 따라다님)
             Image b = UiFactory.Panel("Broom", pad, new Color(0.60f, 0.40f, 0.20f, 0.45f));
+            Art.Apply(b, "glow");
             b.raycastTarget = false;
             broom = b.rectTransform;
             SetCenter(broom, Vector2.zero, new Vector2(BroomRadius * 2f, BroomRadius * 2f));

@@ -74,7 +74,7 @@ namespace SalonIntern
             pad.onDown = p => { last = p; };
             pad.onDrag = Scrub;
 
-            Dot(pad.transform, HairCenter, HairRadius * 2f, new Color(0.30f, 0.20f, 0.15f));
+            Dot(pad.transform, HairCenter, HairRadius * 2f, new Color(0.30f, 0.20f, 0.15f), "hair_head");
             var list = new List<Vector2>();
             const float spacing = 64f;
             for (float y = -HairRadius; y <= HairRadius; y += spacing)
@@ -89,7 +89,7 @@ namespace SalonIntern
             centers = list.ToArray();
             cells = new Image[centers.Length];
             amount = new float[centers.Length];
-            for (int i = 0; i < centers.Length; i++) cells[i] = Dot(pad.transform, centers[i], 58f, fromColor);
+            for (int i = 0; i < centers.Length; i++) cells[i] = Dot(pad.transform, centers[i], 58f, fromColor, "hair_blob");
         }
 
         void Scrub(Vector2 p)
@@ -127,8 +127,8 @@ namespace SalonIntern
                 float x = -520f + t * 1040f;
                 float y = Step == 1 ? 120f * Mathf.Sin(t * Mathf.PI) - 40f : 90f * Mathf.Sin(t * Mathf.PI * 3f);
                 guide[i] = new Vector2(x, y);
-                Dot(pad.transform, guide[i], i == 0 || i == PointCount - 1 ? 34f : 12f,
-                    i == 0 ? new Color(1f, 0.85f, 0.25f) : (i == PointCount - 1 ? new Color(0.30f, 0.75f, 0.45f) : new Color(0.45f, 0.40f, 0.35f)));
+                Dot(pad.transform, guide[i], i == 0 || i == PointCount - 1 ? 38f : 16f,
+                    i == 0 ? new Color(1f, 0.85f, 0.25f) : (i == PointCount - 1 ? new Color(0.30f, 0.75f, 0.45f) : new Color(0.45f, 0.40f, 0.35f)), "bead");
             }
         }
 
@@ -159,7 +159,7 @@ namespace SalonIntern
             if ((p - lastDot).magnitude > 16f)
             {
                 lastDot = p;
-                Dot(pad.transform, p, 12f, off ? new Color(0.90f, 0.30f, 0.30f) : new Color(0.30f, 0.75f, 0.45f));
+                Dot(pad.transform, p, 16f, off ? new Color(0.90f, 0.30f, 0.30f) : new Color(0.30f, 0.75f, 0.45f), "bead");
             }
             if (reached >= PointCount - 2) Finish();
         }

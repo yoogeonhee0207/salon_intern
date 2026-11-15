@@ -25,10 +25,10 @@ namespace SalonIntern
             "거품을 깨끗이 헹궈요",
         };
         const int StageCount = 6;
-        static readonly Color Dry = new Color(0.42f, 0.30f, 0.22f);
-        static readonly Color Wet = new Color(0.22f, 0.30f, 0.52f);
+        static readonly Color Dry = new Color(0.55f, 0.38f, 0.26f);
+        static readonly Color Wet = new Color(0.27f, 0.18f, 0.14f);
         static readonly Color Foam = new Color(0.97f, 0.99f, 1f);
-        static readonly Color Clean = new Color(0.30f, 0.38f, 0.58f);
+        static readonly Color Clean = new Color(0.30f, 0.21f, 0.16f);
         static readonly Color[] From = { Dry, Wet, Foam };   // 문지르는 단계(적시기, 거품내기, 헹구기)마다
         static readonly Color[] To = { Wet, Foam, Clean };
 
@@ -41,7 +41,7 @@ namespace SalonIntern
         int stage;
         float need; // 단계를 넘기는 데 필요한 문지르기 비율
 
-        Image[] cells;
+        Image hairImage;   // 머리 전체 한 장 (진행도에 따라 색이 변함)
         Vector2[] centers;
         float[] amount;
         Vector2 last;
@@ -64,13 +64,16 @@ namespace SalonIntern
 
             // 샴푸대에 누운 손님을 위에서 본 모습
             Color skin = new Color(0.96f, 0.80f, 0.68f);
+            Image scene = Box(pad.transform, new Vector2(0f, 25f), new Vector2(760f, 440f), Color.white, "shampoo_scene");
+            bool sceneArt = Art.Get("shampoo_scene") != null;
+            if (!sceneArt) { scene.gameObject.SetActive(false);
             Box(pad.transform, new Vector2(0f, -205f), new Vector2(760f, 60f), new Color(0.95f, 0.95f, 0.98f));
             Dot(pad.transform, new Vector2(-175f, 5f), 70f, skin);
             Dot(pad.transform, new Vector2(175f, 5f), 70f, skin);
             Dot(pad.transform, new Vector2(0f, -115f), 250f, skin);
             Dot(pad.transform, HairCenter, HairRadius * 2f, new Color(0.25f, 0.17f, 0.13f));
             Box(pad.transform, new Vector2(-48f, -190f), new Vector2(40f, 6f), new Color(0.25f, 0.15f, 0.12f));
-            Box(pad.transform, new Vector2(48f, -190f), new Vector2(40f, 6f), new Color(0.25f, 0.15f, 0.12f));
+            Box(pad.transform, new Vector2(48f, -190f), new Vector2(40f, 6f), new Color(0.25f, 0.15f, 0.12f)); }
 
             var list = new System.Collections.Generic.List<Vector2>();
             const float spacing = 64f;
@@ -84,22 +87,30 @@ namespace SalonIntern
                 }
             }
             centers = list.ToArray();
-            cells = new Image[centers.Length];
             amount = new float[centers.Length];
-            for (int i = 0; i < centers.Length; i++) cells[i] = Dot(pad.transform, centers[i], 58f, From[0]);
+            hairImage = Dot(pad.transform, HairCenter, HairRadius * 2f, From[0], "hair_head");
+            hairImage.raycastTarget = false;
 
             // 옆에 놓인 수도꼭지(왼쪽)와 샴푸통(오른쪽): 필요할 때 눌러서 쓴다
             faucetButton = MakeTool("수도꼭지", new Vector2(-590f, 30f), new Color(0.78f, 0.88f, 0.95f), () => PressTool(0), out faucetGlow);
+            if (Art.Get("prop_faucet") != null) Dot(faucetButton.transform, new Vector2(0f, 45f), 200f, Color.white, "prop_faucet");
+            else
+            {
             Box(faucetButton.transform, new Vector2(-40f, 70f), new Vector2(34f, 90f), new Color(0.55f, 0.58f, 0.64f));
             Box(faucetButton.transform, new Vector2(0f, 105f), new Vector2(110f, 34f), new Color(0.55f, 0.58f, 0.64f));
             Box(faucetButton.transform, new Vector2(45f, 70f), new Vector2(26f, 40f), new Color(0.55f, 0.58f, 0.64f));
             Dot(faucetButton.transform, new Vector2(-40f, 135f), 56f, new Color(0.30f, 0.55f, 0.85f)); // 손잡이
             Dot(faucetButton.transform, new Vector2(45f, 35f), 16f, new Color(0.45f, 0.70f, 0.95f));  // 물방울
+            }
 
             bottleButton = MakeTool("샴푸", new Vector2(590f, 30f), new Color(0.95f, 0.88f, 0.95f), () => PressTool(1), out bottleGlow);
+            if (Art.Get("prop_bottle") != null) Dot(bottleButton.transform, new Vector2(0f, 45f), 200f, Color.white, "prop_bottle");
+            else
+            {
             Box(bottleButton.transform, new Vector2(0f, 70f), new Vector2(90f, 130f), new Color(0.85f, 0.45f, 0.70f)); // 통
             Box(bottleButton.transform, new Vector2(0f, 150f), new Vector2(40f, 30f), new Color(0.95f, 0.95f, 0.98f)); // 펌프
             Box(bottleButton.transform, new Vector2(30f, 168f), new Vector2(50f, 14f), new Color(0.95f, 0.95f, 0.98f));
+            }
 
             StartStage(0);
         }
@@ -139,11 +150,8 @@ namespace SalonIntern
         {
             stage = s;
             int si = Mathf.Min(2, s / 2);
-            for (int i = 0; i < cells.Length; i++)
-            {
-                amount[i] = 0f;
-                cells[i].color = From[si];
-            }
+            for (int i = 0; i < amount.Length; i++) amount[i] = 0f;
+            hairImage.color = From[si];
             bool action = s % 2 == 0;
             // 지금 눌러야 하는 도구는 밝게 강조
             faucetGlow.color = action && s != 2 ? new Color(0.55f, 0.85f, 1f) : new Color(0.78f, 0.88f, 0.95f, 0.6f);
@@ -171,8 +179,8 @@ namespace SalonIntern
             {
                 if ((centers[i] - p).magnitude > 80f) continue;
                 amount[i] = Mathf.Min(1f, amount[i] + dist / 260f);
-                cells[i].color = Color.Lerp(From[si], To[si], amount[i]);
             }
+            hairImage.color = Color.Lerp(From[si], To[si], Mathf.Clamp01(Coverage() / need));
 
             if (Coverage() >= need)
             {

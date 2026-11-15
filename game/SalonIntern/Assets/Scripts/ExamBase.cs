@@ -95,6 +95,21 @@ namespace SalonIntern
             int tool = (int)kind - 1;
             Color m = CursorSkins.MainColor(tool);
             Color a = CursorSkins.AccentColor(tool);
+            string tn = kind.ToString().ToLower();
+            if (Art.Get("tool_" + tn + "_m") != null)
+            {
+                float sz = 120f;
+                Vector2 off = new Vector2(0f, 0f);
+                Image im = Dot(cursorRt, off, sz, m, "tool_" + tn + "_m");
+                im.color = m;
+                Image ia = Dot(cursorRt, off, sz, a, "tool_" + tn + "_a");
+                ia.color = a;
+                Image il = Dot(cursorRt, off, sz, Color.white, "tool_" + tn + "_l");
+                il.color = Color.white;
+                foreach (Image x in new[] { im, ia, il }) { x.preserveAspect = true; }
+                MoveCursor();
+                return;
+            }
             switch (kind)
             {
                 case CursorKind.Shower:
@@ -190,21 +205,24 @@ namespace SalonIntern
         protected DragPad MakePad(Vector2 size, Vector2 pos, Color color)
         {
             Image img = UiFactory.Panel("Pad", self, color);
+            Art.Apply(img, "ui_panel", 32f);
             Place(img.rectTransform, pos, size);
             return img.gameObject.AddComponent<DragPad>();
         }
 
-        protected Image Dot(Transform parent, Vector2 pos, float size, Color color)
+        protected Image Dot(Transform parent, Vector2 pos, float size, Color color, string art = null)
         {
             Image d = UiFactory.Circle("Dot", parent, color);
+            if (art != null) Art.Apply(d, art);
             d.raycastTarget = false;
             Place(d.rectTransform, pos, new Vector2(size, size));
             return d;
         }
 
-        protected Image Box(Transform parent, Vector2 pos, Vector2 size, Color color)
+        protected Image Box(Transform parent, Vector2 pos, Vector2 size, Color color, string art = null, float border = 0f)
         {
             Image b = UiFactory.Panel("Box", parent, color);
+            if (art != null) Art.Apply(b, art, border);
             b.raycastTarget = false;
             Place(b.rectTransform, pos, size);
             return b;

@@ -30,6 +30,7 @@ namespace SalonIntern
             settingsPanel.SetAsLastSibling();
 
             Image box = UiFactory.Panel("SettingsBox", settingsPanel, new Color(0.96f, 0.93f, 0.88f));
+            Art.Apply(box, "ui_panel", 32f);
             UiFactory.Stretch(box.rectTransform, 0.30f, 0.14f, 0.70f, 0.86f);
 
             Text head = UiFactory.Label("SettingsTitle", box.transform, pausing ? "일시정지" : "설정", 44, TextDark, TextAnchor.MiddleCenter);
@@ -538,6 +539,7 @@ namespace SalonIntern
             for (int i = 0; i < MaxChairs; i++)
             {
                 Image c = UiFactory.Panel("Chair" + i, mapArea, new Color(0.95f, 0.85f, 0.70f));
+                Art.Apply(c, "ui_bubble", 28f);
                 PlaceCenter(c.rectTransform, ChairPos(i), new Vector2(200f, 70f));
                 chairImages[i] = c;
                 chairTexts[i] = UiFactory.Label("Text", c.transform, "", 22, TextDark, TextAnchor.MiddleCenter);
@@ -770,12 +772,14 @@ namespace SalonIntern
         // ---------- 상점 확장: 유니폼, 인테리어, 간식 ----------
 
         Image playerImage;
+        Image playerUniform;
         Image corridorImage;
         Image floorImage;
 
         void ApplyLook()
         {
-            if (playerImage != null) playerImage.color = CursorSkins.MainColor(6);
+            if (playerUniform != null) playerUniform.color = CursorSkins.MainColor(6);
+            else if (playerImage != null) playerImage.color = CursorSkins.MainColor(6);
             if (floorImage != null) floorImage.color = CursorSkins.MainColor(7);
             if (corridorImage != null) corridorImage.color = CursorSkins.AccentColor(7);
         }

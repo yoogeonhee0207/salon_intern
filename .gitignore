@@ -40,3 +40,4 @@ crashlytics-build.properties
 *.jks
 *.p12
 *.mobileprovision
+__pycache__/

@@ -80,11 +80,14 @@ namespace SalonIntern
 
             // 막대
             Image barBg = UiFactory.Panel("Bar", self, new Color(0.30f, 0.30f, 0.38f));
+            Art.Apply(barBg, "ui_bubble", 24f);
             UiFactory.Stretch(barBg.rectTransform, 0.12f, 0.45f, 0.88f, 0.55f);
 
             Image z = UiFactory.Panel("Zone", barBg.transform, new Color(0.30f, 0.75f, 0.45f));
+            Art.Apply(z, "ui_bubble", 24f);
             zone = z.rectTransform;
             Image m = UiFactory.Panel("Marker", barBg.transform, new Color(1f, 0.85f, 0.25f));
+            Art.Apply(m, "ui_bubble", 24f);
             marker = m.rectTransform;
 
             infoText = UiFactory.Label("Info", self, "", 38, Color.white, TextAnchor.MiddleCenter);

@@ -49,16 +49,17 @@ namespace SalonIntern
                     int i = r * Cols + c;
                     wet[i] = 1f;
                     centers[i] = new Vector2((c - (Cols - 1) / 2f) * 230f, ((Rows - 1) / 2f - r) * 110f);
-                    cells[i] = Box(pad.transform, centers[i], new Vector2(218f, 100f), WetColor);
+                    cells[i] = Box(pad.transform, centers[i], new Vector2(218f, 100f), WetColor, "hair_block");
                 }
             }
 
-            dryer = Dot(pad.transform, Vector2.zero, Radius * 2f, new Color(1f, 0.6f, 0.3f, 0.45f));
+            dryer = Dot(pad.transform, Vector2.zero, Radius * 2f, new Color(1f, 0.6f, 0.3f, 0.7f), "glow");
             dryer.gameObject.SetActive(false);
 
             // 열 막대
-            Image bar = Box(self, new Vector2(0f, 330f), new Vector2(700f, 34f), new Color(0.30f, 0.30f, 0.38f));
+            Image bar = Box(self, new Vector2(0f, 330f), new Vector2(700f, 34f), new Color(0.30f, 0.30f, 0.38f), "ui_bubble", 14f);
             Image fill = UiFactory.Panel("Heat", bar.transform, new Color(0.95f, 0.45f, 0.25f));
+            Art.Apply(fill, "ui_bubble", 14f);
             fill.raycastTarget = false;
             UiFactory.Stretch(fill.rectTransform, 0f, 0f, 0f, 1f);
             heatFill = fill.rectTransform;

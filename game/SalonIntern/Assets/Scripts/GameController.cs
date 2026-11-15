@@ -57,6 +57,8 @@ namespace SalonIntern
 
         // 도형 캐릭터와 이동
         readonly Dictionary<DesignerData, Vector2> seats = new Dictionary<DesignerData, Vector2>();
+        readonly Dictionary<DesignerData, Image> seatedCustomers = new Dictionary<DesignerData, Image>();
+        readonly Dictionary<DesignerData, int> seatedLook = new Dictionary<DesignerData, int>();
         RectTransform playerRt;
         Vector2 playerTarget;
         bool playerWalking;
@@ -195,6 +197,7 @@ namespace SalonIntern
             UpdateRefill();
             UpdateSupplyUi();
             UpdateCustomer();
+            UpdateSeatedCustomers();
             UpdateCutWait();
 
             // 영업 시계 흐르기
@@ -596,6 +599,13 @@ namespace SalonIntern
             titlePanel.SetAsLastSibling();
 
             // 가위 장식 (도형으로 그린 모양)
+            Image scissorsArt = UiFactory.Panel("TitleScissors", titlePanel, Color.white);
+            bool titleArt = Art.Apply(scissorsArt, "title_scissors");
+            scissorsArt.preserveAspect = true;
+            scissorsArt.raycastTarget = false;
+            UiFactory.Stretch(scissorsArt.rectTransform, 0.13f, 0.50f, 0.31f, 0.93f);
+            scissorsArt.rectTransform.localRotation = Quaternion.Euler(0f, 0f, 18f);
+            scissorsArt.gameObject.SetActive(titleArt);
             Image bladeL = UiFactory.Panel("BladeL", titlePanel, new Color(0.85f, 0.87f, 0.92f));
             UiFactory.Stretch(bladeL.rectTransform, 0.488f, 0.52f, 0.497f, 0.85f);
             bladeL.rectTransform.localRotation = Quaternion.Euler(0f, 0f, -14f);
@@ -606,6 +616,7 @@ namespace SalonIntern
             UiFactory.Stretch(ringL.rectTransform, 0.470f, 0.42f, 0.492f, 0.52f);
             Image ringR = UiFactory.Circle("RingR", titlePanel, new Color(0.90f, 0.40f, 0.50f));
             UiFactory.Stretch(ringR.rectTransform, 0.508f, 0.42f, 0.530f, 0.52f);
+            if (titleArt) { bladeL.gameObject.SetActive(false); bladeR.gameObject.SetActive(false); ringL.gameObject.SetActive(false); ringR.gameObject.SetActive(false); }
 
             Text title = UiFactory.Label("Title", titlePanel, "막내의 가위", 120, Color.white, TextAnchor.MiddleCenter);
             UiFactory.Stretch(title.rectTransform, 0f, 0.60f, 1f, 0.82f);
@@ -1797,10 +1808,11 @@ namespace SalonIntern
         void PickUpCustomer()
         {
             if (customerRt != null) Destroy(customerRt.gameObject);
-            Image c = UiFactory.Circle("Customer", mapArea, new Color(0.96f, 0.78f, 0.66f));
+            int look = playerTask != null ? Mathf.Abs(playerTask.customerType) % 4 : 0;
+            Image c = Art.Figure("Customer", mapArea, new Color(0.96f, 0.78f, 0.66f), "customer_" + look);
             customerRt = c.rectTransform;
-            PlaceCenter(customerRt, playerRt.anchoredPosition + new Vector2(-48f, 0f), new Vector2(52f, 52f));
-            UiFactory.Label("CustomerText", c.transform, "손님", 18, TextDark, TextAnchor.MiddleCenter);
+            PlaceCenter(customerRt, playerRt.anchoredPosition + new Vector2(-48f, 0f), new Vector2(64f, 64f));
+            if (Art.Get("customer_" + look) == null) UiFactory.Label("CustomerText", c.transform, "손님", 18, TextDark, TextAnchor.MiddleCenter);
             AddHeadLabel(customerRt);
             carrying = true;
             customerReturning = false;
@@ -1820,6 +1832,29 @@ namespace SalonIntern
             customerReturning = false;
             if (customerRt != null) Destroy(customerRt.gameObject);
             customerRt = null;
+        }
+
+        // 자리 의자에 앉아 있는 손님: 요청이 있고, 인턴이 데려가지 않았을 때만 보인다
+        void UpdateSeatedCustomers()
+        {
+            foreach (var kv in seatedCustomers)
+            {
+                if (kv.Value == null) continue;
+                Request req = null;
+                foreach (Request r in active)
+                    if (r.designer == kv.Key && !r.isMess) { req = r; break; }
+                bool away = customerRt != null && playerTask != null && playerTask.designer == kv.Key;
+                bool show = req != null && !away;
+                if (kv.Value.gameObject.activeSelf != show) kv.Value.gameObject.SetActive(show);
+                if (!show) continue;
+                int look = Mathf.Abs(req.customerType) % 4;
+                int prev;
+                if (!seatedLook.TryGetValue(kv.Key, out prev) || prev != look)
+                {
+                    seatedLook[kv.Key] = look;
+                    Art.Apply(kv.Value, "customer_" + look);
+                }
+            }
         }
 
         void UpdateCustomer()
@@ -2319,6 +2354,7 @@ namespace SalonIntern
             // 미용실 바닥 (위에서 내려다본 그림)
             Image floor = UiFactory.Panel("SalonFloor", root, new Color(0.86f, 0.80f, 0.72f));
             floorImage = floor;
+            Art.Apply(floor, "floor_tile", 0f, true);
             mapArea = floor.rectTransform;
             UiFactory.Stretch(mapArea, 0.03f, 0.22f, 0.97f, 0.89f);
             BuildFloor();
@@ -2469,20 +2505,24 @@ namespace SalonIntern
             // 가운데 복도
             Image corridor = UiFactory.Panel("Corridor", mapArea, new Color(0.93f, 0.89f, 0.83f));
             corridorImage = corridor;
-            PlaceCenter(corridor.rectTransform, new Vector2(0f, 0f), new Vector2(1500f, 150f));
+            Art.Apply(corridor, "corridor_tile", 0f, true);
+            PlaceCenter(corridor.rectTransform, new Vector2(0f, 0f), new Vector2(1500f, 220f));
 
             // 휴게실
             Image room = UiFactory.Panel("RestRoom", mapArea, new Color(0.62f, 0.72f, 0.82f));
+            bool restArt = Art.Apply(room, "room_rest");
+            if (restArt) room.color = Color.white;
             PlaceCenter(room.rectTransform, RestPos, new Vector2(190f, 200f));
             Button roomButton = room.gameObject.AddComponent<Button>();
             roomButton.targetGraphic = room;
             roomButton.onClick.AddListener(StartRest);
-            Text roomText = UiFactory.Label("RestRoomText", room.transform, "휴게실", 30, Color.white, TextAnchor.UpperCenter);
+            Text roomText = UiFactory.Label("RestRoomText", room.transform, "휴게실", 30, restArt ? TextDark : Color.white, TextAnchor.UpperCenter);
             roomText.rectTransform.offsetMin = new Vector2(0f, 0f);
             roomText.rectTransform.offsetMax = new Vector2(0f, -8f);
 
             // 재료실: 남은 개수가 보이고, 누르면 걸어간다
             Image supply = UiFactory.Panel("SupplyRoom", mapArea, new Color(0.70f, 0.80f, 0.66f));
+            if (Art.Apply(supply, "room_supply")) supply.color = Color.white;
             PlaceCenter(supply.rectTransform, SupplyPos, new Vector2(190f, 200f));
             Button supplyRoomButton = supply.gameObject.AddComponent<Button>();
             supplyRoomButton.targetGraphic = supply;
@@ -2504,6 +2544,7 @@ namespace SalonIntern
             for (int z = 0; z < 2; z++)
             {
                 Image zone = UiFactory.Panel("Zone_" + zoneNames[z], mapArea, zoneColors[z]);
+                if (Art.Apply(zone, z == 0 ? "zone_wash" : "zone_seat")) zone.color = Color.white;
                 PlaceCenter(zone.rectTransform, new Vector2(775f, zoneY[z]), new Vector2(240f, z == 1 ? 300f : 190f));
                 Text zt = UiFactory.Label("ZoneText", zone.transform, zoneNames[z], 26, TextDark, TextAnchor.UpperCenter);
                 zt.rectTransform.offsetMax = new Vector2(0f, -6f);
@@ -2513,30 +2554,56 @@ namespace SalonIntern
             // 디자이너 자리: 위 6명, 아래 6명
             for (int i = 0; i < designers.Length; i++)
             {
-                int row = (i / 6) % 2;
-                int col = i % 6;
-                float sy = row == 0 ? 170f : -170f;
-                Vector2 pos = new Vector2(-480f + col * 200f, sy);
+                int row = (i / 4) % 2;
+                int col = i % 4;
+                float sy = row == 0 ? 200f : -200f;
+                Vector2 pos = new Vector2(-400f + col * 240f, sy);
                 seats[designers[i]] = pos;
 
+                // 거울 (벽쪽) + 손님 의자 + 의자에 앉은 손님, 디자이너는 의자 옆에 선다
+                Image mirror = UiFactory.Panel("Mirror", mapArea, new Color(0.80f, 0.90f, 0.97f));
+                Art.Apply(mirror, "seat_mirror");
+                PlaceCenter(mirror.rectTransform, pos + new Vector2(0f, row == 0 ? 62f : -62f), new Vector2(30f, 92f));
+                mirror.rectTransform.localRotation = Quaternion.Euler(0f, 0f, 90f);
+
                 Image chair = UiFactory.Panel("Chair", mapArea, new Color(0.55f, 0.50f, 0.50f));
-                PlaceCenter(chair.rectTransform, pos, new Vector2(100f, 100f));
+                if (Art.Apply(chair, "seat_chair")) chair.color = Color.white;
+                PlaceCenter(chair.rectTransform, pos, new Vector2(84f, 84f));
+
+                Image seated = Art.Figure("SeatedCustomer_" + designers[i].name, mapArea, new Color(0.96f, 0.78f, 0.66f), "customer_0");
+                seated.raycastTarget = false;
+                PlaceCenter(seated.rectTransform, pos, new Vector2(66f, 66f));
+                seated.gameObject.SetActive(false);
+                seatedCustomers[designers[i]] = seated;
 
                 Color body = Color.HSVToRGB((i * 0.083f) % 1f, 0.45f, 0.95f);
-                Image figure = UiFactory.Circle("Designer_" + designers[i].name, mapArea, body);
-                PlaceCenter(figure.rectTransform, pos, new Vector2(78f, 78f));
+                Image figure = Art.Figure("Designer_" + designers[i].name, mapArea, body, "designer_" + ((designers[i].id - 1) % 12));
+                PlaceCenter(figure.rectTransform, pos + new Vector2(0f, row == 0 ? -54f : 54f), new Vector2(84f, 84f));
 
                 Text name = UiFactory.Label("Name", mapArea, designers[i].name, 24, TextDark, TextAnchor.MiddleCenter);
                 name.horizontalOverflow = HorizontalWrapMode.Overflow;
-                PlaceCenter(name.rectTransform, new Vector2(pos.x, row == 0 ? sy - 62f : sy + 62f), new Vector2(190f, 30f));
+                PlaceCenter(name.rectTransform, new Vector2(pos.x, row == 0 ? sy - 104f : sy + 104f), new Vector2(190f, 30f));
             }
 
             // 내 인턴
-            Image me = UiFactory.Circle("Player", mapArea, new Color(0.25f, 0.55f, 0.35f));
+            Image me = Art.Figure("Player", mapArea, new Color(0.25f, 0.55f, 0.35f), "intern");
             playerImage = me;
             playerRt = me.rectTransform;
-            PlaceCenter(playerRt, new Vector2(-480f, 0f), new Vector2(70f, 70f));
-            UiFactory.Label("PlayerText", me.transform, "나", 28, Color.white, TextAnchor.MiddleCenter);
+            PlaceCenter(playerRt, new Vector2(-480f, 0f), new Vector2(84f, 84f));
+            // 그림이 있으면 유니폼 층에만 색을 입힌다(상점의 유니폼 색)
+            Image uniform = UiFactory.Panel("Uniform", me.transform, Color.white);
+            uniform.raycastTarget = false;
+            if (Art.Apply(uniform, "intern_uniform"))
+            {
+                UiFactory.Stretch(uniform.rectTransform, 0f, 0f, 1f, 1f);
+                uniform.preserveAspect = true;
+                playerUniform = uniform;
+            }
+            else
+            {
+                Destroy(uniform.gameObject);
+                UiFactory.Label("PlayerText", me.transform, "나", 28, Color.white, TextAnchor.MiddleCenter);
+            }
         }
 
         // 디자이너 머리 위에 뜨는 요청 말풍선
@@ -2551,9 +2618,10 @@ namespace SalonIntern
 
             if (r.isMess) baseColor = new Color(0.90f, 0.82f, 0.70f);
             Image bg = UiFactory.Panel("Bubble_" + r.designer.name, mapArea, baseColor);
+            Art.Apply(bg, "ui_bubble", 30f);
             r.background = bg;
             r.baseColor = baseColor;
-            PlaceCenter(bg.rectTransform, r.useAnchor ? r.anchor : new Vector2(seat.x, seat.y + dir * 112f), new Vector2(190f, 130f));
+            PlaceCenter(bg.rectTransform, r.useAnchor ? r.anchor : new Vector2(seat.x, seat.y + dir * 106f), new Vector2(190f, 130f));
 
             Button button = bg.gameObject.AddComponent<Button>();
             button.targetGraphic = bg;

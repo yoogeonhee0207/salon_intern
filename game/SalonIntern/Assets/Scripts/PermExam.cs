@@ -32,7 +32,7 @@ namespace SalonIntern
         static readonly Color HairColor = new Color(0.25f, 0.17f, 0.13f);
         static readonly Color CurlColor = new Color(0.75f, 0.40f, 0.30f);
         static readonly Color PaperColor = new Color(0.98f, 0.98f, 0.95f);
-        static readonly Color RodColor = new Color(0.60f, 0.62f, 0.70f);
+        static readonly Color RodColor = new Color(0.90f, 0.92f, 1f);
         static readonly Color RolledColor = new Color(0.90f, 0.55f, 0.70f);
 
         bool lite;
@@ -82,7 +82,7 @@ namespace SalonIntern
             feedbackText.text = StageTips[s];
             SetCursor(CursorKind.Comb);
 
-            Box(box, new Vector2(0f, TopY + 28f), new Vector2(1300f, 30f), new Color(0.96f, 0.80f, 0.68f)); // 두피
+            Box(box, new Vector2(0f, TopY + 28f), new Vector2(1300f, 30f), new Color(0.96f, 0.80f, 0.68f), "ui_bubble", 12f); // 두피
             if (s == 0) BuildComb();
             else if (s == 1) BuildDrag(false);
             else if (s == 2) BuildDrag(false);
@@ -95,9 +95,9 @@ namespace SalonIntern
         {
             for (int i = 0; i < Rods; i++)
             {
-                Box(box, new Vector2(StrandX[i], (TopY + TipY) / 2f), new Vector2(40f, TopY - TipY), HairColor);
-                if (papers) Box(box, new Vector2(StrandX[i], TipY), new Vector2(64f, 36f), PaperColor);
-                if (rods) Dot(box, new Vector2(StrandX[i], TipY), 54f, RodColor);
+                Box(box, new Vector2(StrandX[i], (TopY + TipY) / 2f), new Vector2(40f, TopY - TipY), HairColor, "hair_strand");
+                if (papers) Box(box, new Vector2(StrandX[i], TipY), new Vector2(64f, 36f), PaperColor, "perm_paper");
+                if (rods) Dot(box, new Vector2(StrandX[i], TipY), 54f, RodColor, "perm_rod");
             }
         }
 
@@ -108,7 +108,7 @@ namespace SalonIntern
                 for (int k = 0; k < Points; k++)
                 {
                     curl[i, k] = 1f;
-                    curlDots[i, k] = Dot(box, CurlPos(i, k), 22f, CurlColor);
+                    curlDots[i, k] = Dot(box, CurlPos(i, k), 22f, CurlColor, "curl_dot");
                 }
         }
 
@@ -153,9 +153,9 @@ namespace SalonIntern
                 {
                     dragStart[i] = new Vector2(StrandX[i], PileY);
                     dragTarget[i] = new Vector2(StrandX[i], TipY);
-                    Dot(box, dragTarget[i], 56f, new Color(0.85f, 0.85f, 0.85f, 0.7f)); // 놓을 자리 표시
+                    Dot(box, dragTarget[i], 60f, new Color(0.45f, 0.45f, 0.5f, 0.9f), "ring_dash"); // 놓을 자리 표시
                     items[i] = Box(box, dragStart[i], new Vector2(64f, 36f), PaperColor).rectTransform;
-                    Dot(box, dragStart[i] + new Vector2(0f, -34f), 14f, new Color(1f, 0.85f, 0.25f));
+                    Dot(box, dragStart[i] + new Vector2(0f, -34f), 18f, new Color(1f, 0.85f, 0.25f), "bead");
                 }
             }
             else if (stage == 2)
@@ -165,8 +165,8 @@ namespace SalonIntern
                 {
                     dragStart[i] = new Vector2(StrandX[i], PileY);
                     dragTarget[i] = new Vector2(StrandX[i], TipY);
-                    items[i] = Dot(box, dragStart[i], 54f, RodColor).rectTransform;
-                    Dot(box, dragStart[i] + new Vector2(0f, -40f), 14f, new Color(1f, 0.85f, 0.25f));
+                    items[i] = Dot(box, dragStart[i], 54f, RodColor, "perm_rod").rectTransform;
+                    Dot(box, dragStart[i] + new Vector2(0f, -40f), 18f, new Color(1f, 0.85f, 0.25f), "bead");
                 }
             }
             else
@@ -176,8 +176,8 @@ namespace SalonIntern
                 {
                     dragStart[i] = new Vector2(StrandX[i], TipY);
                     dragTarget[i] = new Vector2(StrandX[i], TopY);
-                    Dot(box, dragTarget[i], 56f, new Color(0.85f, 0.85f, 0.85f, 0.7f));
-                    items[i] = Dot(box, dragStart[i], 54f, RodColor).rectTransform;
+                    Dot(box, dragTarget[i], 60f, new Color(0.45f, 0.45f, 0.5f, 0.9f), "ring_dash");
+                    items[i] = Dot(box, dragStart[i], 54f, RodColor, "perm_rod").rectTransform;
                 }
             }
         }
@@ -185,7 +185,7 @@ namespace SalonIntern
         void Drag(Vector2 p)
         {
             if (active < 0) return;
-            Dot(box, p, 10f, new Color(0.95f, 0.85f, 0.40f));
+            Dot(box, p, 12f, new Color(0.95f, 0.85f, 0.40f), "bead");
             items[active].anchoredPosition = p;
             if ((p - dragTarget[active]).magnitude <= 55f)
             {
@@ -203,9 +203,9 @@ namespace SalonIntern
             for (int i = 0; i < Rods; i++)
             {
                 banded[i] = false;
-                Box(box, new Vector2(StrandX[i], (TopY + TipY) / 2f), new Vector2(40f, TopY - TipY), HairColor);
-                Box(box, new Vector2(StrandX[i], TipY), new Vector2(64f, 36f), PaperColor);
-                Dot(box, new Vector2(StrandX[i], TopY), 70f, RolledColor);
+                Box(box, new Vector2(StrandX[i], (TopY + TipY) / 2f), new Vector2(40f, TopY - TipY), HairColor, "hair_strand");
+                Box(box, new Vector2(StrandX[i], TipY), new Vector2(64f, 36f), PaperColor, "perm_paper");
+                Dot(box, new Vector2(StrandX[i], TopY), 70f, RolledColor, "perm_rod");
             }
         }
 
@@ -215,7 +215,7 @@ namespace SalonIntern
             {
                 if (banded[i] || (p - new Vector2(StrandX[i], TopY)).magnitude > 65f) continue;
                 banded[i] = true;
-                Dot(box, new Vector2(StrandX[i], TopY), 34f, new Color(1f, 0.85f, 0.25f)); // 고무줄
+                Dot(box, new Vector2(StrandX[i], TopY), 38f, new Color(1f, 0.85f, 0.25f), "rubber_band"); // 고무줄
                 if (CountTrue(banded) >= Rods) Finish(true);
             }
         }
