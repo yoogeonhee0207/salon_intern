@@ -9,9 +9,9 @@ namespace SalonIntern
     {
         public static bool Lite;
 
-        protected override string Title { get { return lite ? "펌  -  직접 해봐요!" : "펌 시험  -  빗질, 파지, 롯드, 말기, 고무줄"; } }
+        protected override string Title { get { return (lite || Lite) ? "펌  -  직접 해봐요!" : "펌 시험  -  빗질, 파지, 롯드, 말기, 고무줄"; } }
         protected override string Rule { get { return "1 휘어진 머리를 빗어 펴요  →  2 파지를 머리끝에 올려요  →  3 롯드를 놓아요\n4 롯드를 두피까지 말아 올려요  →  5 고무줄로 고정해요"; } }
-        protected override float DimAlpha { get { return lite ? 0.88f : 0.97f; } }
+        protected override float DimAlpha { get { return (lite || Lite) ? 0.88f : 0.97f; } }
 
         static readonly string[] StageNames = { "1단계 빗질", "2단계 파지 올리기", "3단계 롯드 놓기", "4단계 롯드 말기", "5단계 고무줄 놓기" };
         static readonly string[] StageTips =
@@ -24,7 +24,7 @@ namespace SalonIntern
         };
         const int StageCount = 5;
         const int Rods = 4;
-        const int Points = 12;
+        const int Points = 40;
         const float TopY = 165f;    // 두피
         const float TipY = 15f;     // 머리끝
         const float PileY = -150f;  // 도구를 쌓아 둔 자리
@@ -47,6 +47,7 @@ namespace SalonIntern
         // 1 빗질: 점마다 휘어짐 정도(1 -> 0)
         float[,] curl = new float[Rods, Points];
         Image[,] curlDots = new Image[Rods, Points];
+        Image[,] curlSegs = new Image[Rods, Points - 1];
 
         // 2~4 끌어다 놓기 공통
         readonly Vector2[] dragStart = new Vector2[Rods];
@@ -105,18 +106,44 @@ namespace SalonIntern
         void BuildComb()
         {
             for (int i = 0; i < Rods; i++)
+            {
                 for (int k = 0; k < Points; k++)
                 {
                     curl[i, k] = 1f;
-                    curlDots[i, k] = Dot(box, CurlPos(i, k), 22f, CurlColor, "curl_dot");
+                    curlDots[i, k] = Dot(box, CurlPos(i, k), 16f, CurlColor);
+                    curlDots[i, k].raycastTarget = false;
                 }
+                for (int k = 0; k < Points - 1; k++)
+                {
+                    curlSegs[i, k] = Box(box, Vector2.zero, new Vector2(16f, 10f), CurlColor);
+                    curlSegs[i, k].raycastTarget = false;
+                }
+                UpdateSegs(i);
+            }
         }
 
+        // 꼬불꼬불한 머리카락 한 가닥: 이어진 선으로 그려서, 빗으면 곧은 1자가 된다
         Vector2 CurlPos(int strand, int k)
         {
             float t = k / (float)(Points - 1);
             float y = TopY - t * (TopY - TipY);
-            return new Vector2(StrandX[strand] + curl[strand, k] * 45f * Mathf.Sin(k * 1.2f + strand), y);
+            return new Vector2(StrandX[strand] + curl[strand, k] * 45f * Mathf.Sin(k * 0.45f + strand * 1.3f), y);
+        }
+
+        void UpdateSegs(int i)
+        {
+            for (int k = 0; k < Points - 1; k++)
+            {
+                Vector2 a = curlDots[i, k].rectTransform.anchoredPosition;
+                Vector2 b = curlDots[i, k + 1].rectTransform.anchoredPosition;
+                Vector2 d = b - a;
+                RectTransform rt = curlSegs[i, k].rectTransform;
+                rt.anchoredPosition = (a + b) * 0.5f;
+                rt.sizeDelta = new Vector2(16f, d.magnitude + 1f);
+                rt.localRotation = Quaternion.Euler(0f, 0f, Mathf.Atan2(d.y, d.x) * Mathf.Rad2Deg - 90f);
+                float c = (curl[i, k] + curl[i, k + 1]) * 0.5f;
+                curlSegs[i, k].color = Color.Lerp(HairColor, CurlColor, c);
+            }
         }
 
         void Comb(Vector2 p)
@@ -124,13 +151,18 @@ namespace SalonIntern
             float dist = (p - last).magnitude;
             last = p;
             for (int i = 0; i < Rods; i++)
+            {
+                bool touched = false;
                 for (int k = 0; k < Points; k++)
                 {
                     if ((curlDots[i, k].rectTransform.anchoredPosition - p).magnitude > 75f) continue;
                     curl[i, k] = Mathf.Max(0f, curl[i, k] - dist / 220f);
                     curlDots[i, k].rectTransform.anchoredPosition = CurlPos(i, k);
                     curlDots[i, k].color = Color.Lerp(HairColor, CurlColor, curl[i, k]);
+                    touched = true;
                 }
+                if (touched) UpdateSegs(i);
+            }
             if (CombRemaining() <= (lite ? 0.25f : 0.1f)) StartStage(1);
         }
 

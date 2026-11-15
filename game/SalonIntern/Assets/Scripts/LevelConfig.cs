@@ -63,6 +63,10 @@ namespace SalonIntern
         // 테스트용: true면 경험치와 시험 응시 조건을 최하로 낮춘다. 출시 전에 false로 바꿀 것.
         public const bool TestMode = false;
 
+        // 테스트용: true면 승급·졸업시험 미니게임을 건너뛰고 바로 합격 처리한다 (XP·연습 횟수 조건은 그대로).
+        // 출시 전, 그리고 시험 난이도를 점검할 때는 false로 돌릴 것.
+        public static readonly bool AutoPassExam = false;
+
         static readonly int[] NeedXp = { 8, 18, 22, 26, 27, 34, 35 };
 
         public static int XpToNext(int level)

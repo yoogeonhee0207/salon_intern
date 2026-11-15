@@ -302,7 +302,7 @@ namespace SalonIntern
             {
                 "졸업시험 합격!\n\n원장님이 지켜보는 가운데, " + playerName + "님의 가위가 머리카락 사이를 지나가요.\n(" + result.hits + "/" + result.rounds + ")",
                 "원장님이 천천히 고개를 끄덕여요.\n\n\"" + playerName + ". 수건 접던 막내가 여기까지 왔구나.\"",
-                friend + "이(가) 눈시울을 붉히며 다가와요.\n\n\"처음 왔을 때가 어제 같은데... 졸업 축하해.\"",
+                Ga(friend) + " 눈시울을 붉히며 다가와요.\n\n\"처음 왔을 때가 어제 같은데... 졸업 축하해.\"",
                 salonName + "에 새 막내가 들어왔어요.\n\n수건을 끌어안고 허둥대는 모습이 낯설지 않아요. " + playerName + "님은 가만히 웃으며 가위를 건네요.",
                 "인턴 편 끝!\n\n수건 접던 막내는 이제 가위를 잡았어요.\n\n다음은 디자이너 과정이에요. (준비 중)",
             };
@@ -406,16 +406,18 @@ namespace SalonIntern
 
         // ---------- 오늘의 목표 ----------
 
-        int goalType = -1;   // -1 없음, 0 만족도 A 이상 N건, 1 놓침 없이, 2 재료 안 떨어뜨리기
+        int goalType = -1;   // -1 없음, 0 만족도 A 이상 N건, 1 놓침 없이, 2 재료실에서 직접 N번 채우기
         int goalCount = 2;
         int dayGoodSat;
         int dayScolds;
+        int dayRefills;      // 오늘 내가 직접 재료를 가득 채운 횟수
         const int GoalReward = 15;
 
         void RollDailyGoal()
         {
             dayGoodSat = 0;
             dayScolds = 0;
+            dayRefills = 0;
             inspectorToday = false;
             if (TourDay) { goalType = -1; return; }
             goalType = Random.Range(0, 3);
@@ -426,7 +428,7 @@ namespace SalonIntern
         {
             if (goalType == 0) return "만족도 A 이상 시술 " + goalCount + "건 (포인트 +" + GoalReward + ")";
             if (goalType == 1) return "요청을 하나도 놓치지 않기 (포인트 +" + GoalReward + ")";
-            if (goalType == 2) return "재료가 떨어져서 혼나지 않기 (포인트 +" + GoalReward + ")";
+            if (goalType == 2) return "재료실에서 직접 재료를 " + goalCount + "번 채우기 (포인트 +" + GoalReward + ")";
             return "";
         }
 
@@ -450,7 +452,7 @@ namespace SalonIntern
             // 오늘의 목표
             if (goalType >= 0)
             {
-                bool ok = goalType == 0 ? dayGoodSat >= goalCount : (goalType == 1 ? dayMissedNow == 0 : dayScolds == 0);
+                bool ok = goalType == 0 ? dayGoodSat >= goalCount : (goalType == 1 ? dayMissedNow == 0 : dayRefills >= goalCount);
                 if (ok)
                 {
                     goalsDone++;
@@ -498,15 +500,18 @@ namespace SalonIntern
 
         // 시술석에는 의자가 있고 의자 하나에 손님 한 명만 앉는다. 레벨이 오르면 의자가 늘어난다.
         const int MaxChairs = 5;
-        static readonly float[] ChairY = { 55f, -5f, -65f, -125f, -185f };
+        static readonly float[] ChairY = { 60f, -28f, -116f, -204f, -292f };
+        static readonly Vector2 ChairStand = new Vector2(-72f, 0f); // 인턴은 의자 뒤(왼쪽)에 서서 시술한다
+        const float ChairCustomerSize = 74f;
         readonly Request[] chairOwner = new Request[MaxChairs];
         readonly Image[] chairImages = new Image[MaxChairs];
-        readonly Text[] chairTexts = new Text[MaxChairs];
+        readonly Image[] chairFigures = new Image[MaxChairs]; // 인턴이 시술 중인 의자에 앉은 손님 (내가 데려온 손님은 따로 그린다)
         Request chairWaiter;   // 의자가 나기를 기다리는 손님의 요청
 
         int ChairCount { get { return MaxChairs; } }
 
-        Vector2 ChairPos(int i) { return new Vector2(775f, ChairY[Mathf.Clamp(i, 0, MaxChairs - 1)]); }
+        Vector2 ChairPos(int i) { return new Vector2(745f, ChairY[Mathf.Clamp(i, 0, MaxChairs - 1)]); }
+        Vector2 ChairStandPos(int i) { return ChairPos(i) + ChairStand; }
 
         int FreeChairs()
         {
@@ -544,18 +549,37 @@ namespace SalonIntern
             for (int i = 0; i < MaxChairs; i++) chairOwner[i] = null;
             foreach (Request q in active) q.chair = -1;
             chairWaiter = null;
+            for (int i = 0; i < BedCount; i++) bedOwner[i] = null;
+            foreach (Request q in active) q.bed = -1;
             RefreshChairs();
         }
 
         void BuildChairs()
         {
+            // 넓은 테이블: 의자들이 테이블 왼쪽에 줄지어 있고, 손님은 의자에 앉고 인턴은 뒤에서 시술한다
+            Image table = UiFactory.Panel("SeatTable", mapArea, new Color(0.62f, 0.44f, 0.30f));
+            Art.Apply(table, "ui_bubble", 24f);
+            PlaceCenter(table.rectTransform, new Vector2(848f, -114f), new Vector2(84f, 408f));
+            Image tableTop = UiFactory.Panel("SeatTableTop", table.transform, new Color(0.74f, 0.55f, 0.38f));
+            Art.Apply(tableTop, "ui_bubble", 20f);
+            UiFactory.Stretch(tableTop.rectTransform, 0.14f, 0.02f, 0.86f, 0.98f);
+            tableTop.raycastTarget = false;
+            table.raycastTarget = false;
+
             for (int i = 0; i < MaxChairs; i++)
             {
-                Image c = UiFactory.Panel("Chair" + i, mapArea, new Color(0.95f, 0.85f, 0.70f));
-                Art.Apply(c, "ui_bubble", 28f);
-                PlaceCenter(c.rectTransform, ChairPos(i), new Vector2(200f, 54f));
+                Image c = UiFactory.Panel("Chair" + i, mapArea, new Color(0.55f, 0.50f, 0.50f));
+                if (Art.Apply(c, "seat_chair")) c.color = Color.white;
+                else Art.Apply(c, "ui_bubble", 20f);
+                PlaceCenter(c.rectTransform, ChairPos(i), new Vector2(80f, 80f));
+                c.raycastTarget = false;
                 chairImages[i] = c;
-                chairTexts[i] = UiFactory.Label("Text", c.transform, "", 22, TextDark, TextAnchor.MiddleCenter);
+
+                Image fig = Art.Figure("ChairCustomer" + i, mapArea, new Color(0.96f, 0.78f, 0.66f), "customer_0");
+                fig.raycastTarget = false;
+                PlaceCenter(fig.rectTransform, ChairPos(i), new Vector2(ChairCustomerSize, ChairCustomerSize));
+                fig.gameObject.SetActive(false);
+                chairFigures[i] = fig;
             }
             RefreshChairs();
         }
@@ -567,10 +591,134 @@ namespace SalonIntern
                 if (chairImages[i] == null) continue;
                 bool open = i < ChairCount;
                 bool taken = open && chairOwner[i] != null;
-                chairImages[i].color = !open ? new Color(0.80f, 0.80f, 0.82f) : (taken ? new Color(0.78f, 0.55f, 0.38f) : new Color(0.97f, 0.90f, 0.78f));
-                chairTexts[i].text = !open ? "의자 (Lv.3~)" : (taken ? "손님이 앉아 있어요" : "빈 의자");
+                bool hasArt = Art.Get("seat_chair") != null;
+                chairImages[i].color = !open ? new Color(0.80f, 0.80f, 0.82f)
+                    : (hasArt ? (taken ? new Color(0.88f, 0.80f, 0.74f) : Color.white)
+                              : (taken ? new Color(0.62f, 0.45f, 0.34f) : new Color(0.88f, 0.76f, 0.58f)));
             }
         }
+
+        // ---------- 샴푸실: 샴푸대 ----------
+
+        // 샴푸대 2대: 손님이 누워 머리를 감고, 인턴은 머리 쪽(왼쪽 뒤)에 서서 감긴다
+        const int BedCount = 2;
+        const float BedCustomerSize = 68f;
+        static readonly float[] BedY = { 255f, 170f };
+        readonly Request[] bedOwner = new Request[BedCount];
+        readonly Image[] bedFigures = new Image[BedCount];
+        readonly int[] bedLook = { -1, -1 };
+        readonly Image[] bedFoam = new Image[BedCount * 3];
+
+        Vector2 WashBedPos(int i) { return new Vector2(800f, BedY[Mathf.Clamp(i, 0, BedCount - 1)]); }
+        Vector2 WashStandPos(int i) { return new Vector2(690f, BedY[Mathf.Clamp(i, 0, BedCount - 1)]); }
+
+        void BuildWashBeds()
+        {
+            for (int i = 0; i < BedCount; i++)
+            {
+                Vector2 pos = WashBedPos(i);
+                Image bed = UiFactory.Panel("WashBed" + i, mapArea, new Color(0.90f, 0.94f, 0.98f));
+                Art.Apply(bed, "ui_bubble", 22f);
+                PlaceCenter(bed.rectTransform, pos + new Vector2(10f, 0f), new Vector2(140f, 60f));
+                bed.raycastTarget = false;
+                Image pillow = UiFactory.Panel("WashPillow" + i, bed.transform, new Color(0.70f, 0.82f, 0.94f));
+                Art.Apply(pillow, "ui_bubble", 14f);
+                UiFactory.Stretch(pillow.rectTransform, 0.04f, 0.12f, 0.26f, 0.88f);
+                pillow.raycastTarget = false;
+                Image basin = UiFactory.Panel("WashBasin" + i, mapArea, new Color(0.45f, 0.68f, 0.88f));
+                Art.Apply(basin, "ui_bubble", 22f);
+                PlaceCenter(basin.rectTransform, pos + new Vector2(-72f, 0f), new Vector2(40f, 50f));
+                basin.raycastTarget = false;
+
+                Image fig = Art.Figure("BedCustomer" + i, mapArea, new Color(0.96f, 0.78f, 0.66f), "customer_0");
+                fig.raycastTarget = false;
+                PlaceCenter(fig.rectTransform, pos, new Vector2(BedCustomerSize, BedCustomerSize));
+                fig.gameObject.SetActive(false);
+                bedFigures[i] = fig;
+                for (int k = 0; k < 3; k++)
+                {
+                    Image foam = UiFactory.Circle("BedFoam", mapArea, new Color(1f, 1f, 1f, 0.95f));
+                    foam.raycastTarget = false;
+                    PlaceCenter(foam.rectTransform, pos + new Vector2(-10f + k * 9f, 12f - (k % 2) * 8f), new Vector2(16f, 16f));
+                    foam.gameObject.SetActive(false);
+                    bedFoam[i * 3 + k] = foam;
+                }
+            }
+        }
+
+        void AssignBed(Request r)
+        {
+            if (r.bed >= 0) return;
+            for (int i = 0; i < BedCount; i++)
+            {
+                if (bedOwner[i] != null) continue;
+                bedOwner[i] = r;
+                r.bed = i;
+                return;
+            }
+            r.bed = 0; // 둘 다 차 있으면 첫 샴푸대를 같이 쓴다(표시만)
+        }
+
+        // 지금 단계가 샴푸가 아니거나 요청이 사라졌으면 샴푸대를 비운다. 인턴이 감기는 손님은 그림으로 보여 준다.
+        void UpdateBeds()
+        {
+            foreach (Request r in active)
+            {
+                if (r.bed < 0) continue;
+                bool washing = r.route != null && r.routeIdx < r.route.Length && StepStation[r.route[r.routeIdx]] == 0;
+                if (washing) continue;
+                if (bedOwner[r.bed] == r) bedOwner[r.bed] = null;
+                r.bed = -1;
+            }
+            for (int i = 0; i < BedCount; i++)
+            {
+                if (bedOwner[i] != null && !active.Contains(bedOwner[i])) bedOwner[i] = null;
+                if (bedFigures[i] == null) continue;
+                Request o = bedOwner[i];
+                bool foaming = o != null && !o.isMess;
+                for (int k = 0; k < 3; k++)
+                {
+                    Image f = bedFoam[i * 3 + k];
+                    if (f == null) continue;
+                    if (f.gameObject.activeSelf != foaming) f.gameObject.SetActive(foaming);
+                    if (foaming) { float sc = 0.8f + 0.4f * Mathf.Abs(Mathf.Sin(Time.time * 3f + k * 1.7f)); f.rectTransform.localScale = new Vector3(sc, sc, 1f); }
+                }
+                bool mine = o != null && (o.seated != null || (customerRt != null && playerTask == o));
+                bool show = o != null && !mine && !o.isMess;
+                if (bedFigures[i].gameObject.activeSelf != show) bedFigures[i].gameObject.SetActive(show);
+                if (!show) continue;
+                int look = Mathf.Abs(o.customerType) % 4;
+                if (bedLook[i] != look) { bedLook[i] = look; Art.Apply(bedFigures[i], "customer_" + look); }
+            }
+        }
+
+        // 이 요청의 지금 단계가 의자/샴푸대에서 하는 시술이면 서는 자리, 손님 자리, 손님 크기를 돌려준다
+        bool TrySeatFor(Request r, out Vector2 stand, out Vector2 seat, out float size)
+        {
+            stand = seat = Vector2.zero; size = 84f;
+            if (r.route == null || r.routeIdx >= r.route.Length) return false;
+            int st = StepStation[r.route[r.routeIdx]];
+            if (st == 1 && r.chair >= 0) { stand = ChairStandPos(r.chair); seat = ChairPos(r.chair); size = ChairCustomerSize; return true; }
+            if (st == 0 && r.bed >= 0) { stand = WashStandPos(r.bed); seat = WashBedPos(r.bed); size = BedCustomerSize; return true; }
+            return false;
+        }
+
+        // 인턴(동료)이 시술 중인 의자에는 손님이 앉아 있다. 내가 데려온 손님은 자기 그림이 의자 위에 놓인다.
+        void UpdateChairFigures()
+        {
+            for (int i = 0; i < MaxChairs; i++)
+            {
+                if (chairFigures[i] == null) continue;
+                Request o = chairOwner[i];
+                bool mine = o != null && (o.seated != null || (customerRt != null && playerTask == o));
+                bool show = o != null && !mine && !o.isMess;
+                if (chairFigures[i].gameObject.activeSelf != show) chairFigures[i].gameObject.SetActive(show);
+                if (!show) continue;
+                int look = Mathf.Abs(o.customerType) % 4;
+                if (chairLook[i] != look) { chairLook[i] = look; Art.Apply(chairFigures[i], "customer_" + look); }
+            }
+        }
+        readonly int[] chairLook = { -1, -1, -1, -1, -1 };
 
         // 의자가 날 때까지 기다리던 손님을 자리가 나면 데려간다
         void UpdateChairWait()

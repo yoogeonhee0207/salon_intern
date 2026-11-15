@@ -17,10 +17,10 @@ namespace SalonIntern
         public const float MinutesPerSecond = (CloseMinutes - OpenMinutes) / BusinessSeconds;
 
         // 아침 예약표: 10시부터 30분 단위로 16칸(10:00~17:30), 칸마다 예약이 있을 확률
-        // (칸이 두 배, 인턴이 늘었으니 칸당 확률 0.16. 고르지 않은 선생님의 예약은 동료 인턴이 처리하니 예약이 많아야 인턴이 놀지 않는다)
+        // (칸이 두 배, 인턴이 늘었으니 칸당 확률 0.26 → 하루 전체 예약 약 33건. 고르지 않은 선생님의 예약은 동료 인턴이 처리하니 예약이 많아야 인턴이 놀지 않는다)
         public const int SlotMinutes = 30;
         public const int ReservationSlots = (CloseMinutes - OpenMinutes) / SlotMinutes;
-        public const float ReservationChance = 0.16f;
+        public const float ReservationChance = 0.26f;
 
         // 오늘의 목표 점수. 레벨별로 보수적으로 예상한 하루 점수의 약 70% (A등급), 1.2배면 S등급.
         // 예상 하루 점수(인턴이 도운 뒤 내가 직접 한 일만): Lv.1 약 160, Lv.2 약 180, Lv.3 약 240, Lv.4 약 260, Lv.5 약 300, Lv.6 약 325

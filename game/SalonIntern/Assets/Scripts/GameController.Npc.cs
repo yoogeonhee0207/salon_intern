@@ -27,6 +27,7 @@ namespace SalonIntern
             public float waitT;            // 의자를 기다린 시간
             public int restFrom, restTo;   // 휴게 시간 (게임 시계의 분)
             public bool resting;
+            public int refillKind = -1;    // 재료를 채우러 가는 중이면 재료 번호
             public int level;              // 동료 인턴의 레벨 (내 레벨에 따라 바뀐다)
         }
 
@@ -70,7 +71,7 @@ namespace SalonIntern
             BuildPlayerMarker();
             npcs.Clear();
             string[] names = { "정하윤", "오지후", "김나래" };
-            string[] roles = { "인턴장", "중간 인턴", "동기" };
+            string[] roles = { "인턴장", "오지후", "김나래" }; // 인턴장 말고는 이름으로 부른다
             Color uniformColor = CursorSkins.MainColor(6);
             float[] mult = { 0.7f, 1.0f, 1.5f };
             int[] sat = { 88, 75, 58 };
@@ -91,10 +92,11 @@ namespace SalonIntern
                 }
                 else { Destroy(uni.gameObject); uni = null; }
 
-                Text label = UiFactory.Label("NpcName", mapArea, roles[i], 20, TextDark, TextAnchor.MiddleCenter);
+                Text label = UiFactory.Label("NpcName", mapArea, roles[i], 17, InternNameColor, TextAnchor.MiddleCenter);
+                AddNameOutline(label);
                 label.horizontalOverflow = HorizontalWrapMode.Overflow;
                 label.raycastTarget = false;
-                PlaceCenter(label.rectTransform, homes[i] + new Vector2(0f, -66f), new Vector2(200f, 26f));
+                PlaceCenter(label.rectTransform, homes[i] + new Vector2(0f, 54f), new Vector2(200f, 26f));
 
                 npcs.Add(new Npc
                 {
@@ -123,6 +125,16 @@ namespace SalonIntern
             }
         }
 
+        // 아침 화면용: 오늘 같이 일하는 인턴들의 레벨
+        string NpcRosterText()
+        {
+            string[] roles = { "인턴장", "오지후", "김나래" }; // 인턴장 말고는 이름으로 부른다
+            int[] lv = LevelConfig.NpcLevels[Mathf.Clamp(level, 0, LevelConfig.NpcLevels.Length - 1)];
+            string t = "";
+            for (int i = 0; i < roles.Length && i < lv.Length; i++) t += (i > 0 ? "  ·  " : "") + roles[i] + " Lv." + lv[i];
+            return t;
+        }
+
         string NpcTitle(Npc n) { return n.role + " Lv." + n.level; }
 
         bool NpcOnBreak(Npc n)
@@ -135,6 +147,27 @@ namespace SalonIntern
         {
             foreach (Npc n in npcs) if (n.resting) return true;
             return false;
+        }
+
+        Vector2 NpcSupplySpot(Npc n) { return SupplyPos + new Vector2(105f, (n.id - 2) * 45f); }
+
+        // 다 떨어지기 전에 인턴이 재료를 채운다: 40% 이하이고 아무도 채우는 중이 아닌 재료 중 가장 모자란 것
+        int NpcPickRefill()
+        {
+            int best = -1;
+            float bestRatio = 0.4f;
+            for (int k = 0; k < stock.Length; k++)
+            {
+                float ratio = stock[k] / (float)StockMax[k];
+                if (ratio > bestRatio) continue;
+                if (refilling && refillKind == k) continue;
+                bool taken = false;
+                foreach (Npc o in npcs) if (o.refillKind == k) taken = true;
+                if (taken) continue;
+                best = k;
+                bestRatio = ratio;
+            }
+            return best;
         }
 
         Vector2 NpcRestSpot(Npc n) { return RestPos + new Vector2(105f, (n.id - 2) * 45f); }
@@ -203,7 +236,7 @@ namespace SalonIntern
             foreach (Npc n in npcs)
             {
                 if (n.rt == null) continue;
-                n.task = null; n.state = 0; n.resting = false;
+                n.task = null; n.state = 0; n.resting = false; n.refillKind = -1;
                 n.rt.anchoredPosition = n.home;
                 PlaceNpcLabel(n);
             }
@@ -211,7 +244,7 @@ namespace SalonIntern
 
         static void PlaceNpcLabel(Npc n)
         {
-            if (n.label != null) n.label.rectTransform.anchoredPosition = n.rt.anchoredPosition + new Vector2(0f, -66f);
+            if (n.label != null) n.label.rectTransform.anchoredPosition = n.rt.anchoredPosition + new Vector2(0f, 54f);
         }
 
         Vector2 NpcWorkSpot(Npc n, Request r)
@@ -248,7 +281,8 @@ namespace SalonIntern
         Vector2 NpcStepSpot(Npc n, Request r, int idx)
         {
             int st = StepStation[r.route[idx]];
-            if (st == 1 && r.chair >= 0) return ChairPos(r.chair) + new Vector2(-80f, 0f);
+            if (st == 1 && r.chair >= 0) return ChairStandPos(r.chair);
+            if (st == 0) { AssignBed(r); return WashStandPos(Mathf.Max(0, r.bed)); }
             if (st >= 0) return StationPos[st] + new Vector2(-80f, 0f);
             return NpcWorkSpot(n, r);
         }
@@ -355,11 +389,11 @@ namespace SalonIntern
                 if (brk != n.resting)
                 {
                     n.resting = brk;
-                    if (brk) Toast("☕ " + n.role + "이(가) 휴게실에 갔어요! 고르지 않은 선생님 일도 도와주면 추가 점수 +10", true);
-                    else Toast(n.role + "이(가) 휴게를 마치고 돌아와요", false);
+                    if (brk) Toast("☕ " + Ga(n.role) + " 휴게실에 갔어요! 고르지 않은 선생님 일도 도와주면 추가 점수 +10", true);
+                    else Toast(Ga(n.role) + " 휴게를 마치고 돌아와요", false);
                 }
 
-                if (n.task == null && !n.resting)
+                if (n.task == null && !n.resting && n.refillKind < 0)
                 {
                     // 먼저 맡은 요청(다른 선생님 일)을 하고, 없으면 한가한 인턴이 내가 고른 선생님 일을 도와준다
                     Request pick = null;
@@ -379,6 +413,16 @@ namespace SalonIntern
                     }
                     if (pick == null)
                     {
+                        // 맡은 일이 없으면 재료부터 채운다 (재료가 떨어지면 내가 잔소리를 듣는다)
+                        int refillK = NpcPickRefill();
+                        if (refillK >= 0)
+                        {
+                            n.refillKind = refillK;
+                            n.state = 4;
+                        }
+                    }
+                    if (pick == null && n.refillKind < 0)
+                    {
                         foreach (Request r in active)
                         {
                             if (r.npcOnly || r.assignee != 0 || r.isLocked || r.isMess) continue;
@@ -387,7 +431,7 @@ namespace SalonIntern
                             if (NpcNeedsChairNow(r)) continue;
                             pick = r;
                             SetAssignee(r, n.id);
-                            Toast(n.role + "이(가) " + r.designer.name + " 선생님 " + r.label + " 을(를) 도와줘요", true);
+                            Toast(Ga(n.role) + " " + r.designer.name + " 선생님 " + Reul(r.label) + " 도와줘요", true);
                             break;
                         }
                     }
@@ -405,7 +449,37 @@ namespace SalonIntern
                     n.rt.anchoredPosition = Vector2.MoveTowards(n.rt.anchoredPosition, NpcRestSpot(n), NpcSpeed * dt);
                     bool arrived = (n.rt.anchoredPosition - NpcRestSpot(n)).sqrMagnitude < 4f;
                     n.rt.localRotation = arrived ? Quaternion.identity : Quaternion.Euler(0f, 0f, Mathf.Sin(Time.time * 14f) * 6f);
-                    n.label.text = n.role + (arrived ? " 휴게 중" : "");
+                    n.label.text = arrived ? "휴게 중" : n.role;
+                }
+                else if (n.task == null && n.refillKind >= 0)
+                {
+                    int k = n.refillKind;
+                    Vector2 spot = NpcSupplySpot(n);
+                    if (n.state == 4)
+                    {
+                        n.rt.anchoredPosition = Vector2.MoveTowards(n.rt.anchoredPosition, spot, NpcSpeed * dt);
+                        n.rt.localRotation = Quaternion.Euler(0f, 0f, Mathf.Sin(Time.time * 14f) * 6f);
+                        n.label.text = "재료 채우러";
+                        if ((n.rt.anchoredPosition - spot).sqrMagnitude < 1f)
+                        {
+                            n.state = 5;
+                            n.total = n.left = 3f + 2f * n.workMult;
+                        }
+                    }
+                    else
+                    {
+                        n.left -= dt;
+                        n.rt.anchoredPosition = spot + new Vector2(0f, Mathf.Abs(Mathf.Sin(Time.time * 7f)) * 8f);
+                        n.rt.localRotation = Quaternion.Euler(0f, 0f, Mathf.Sin(Time.time * 9f) * 8f);
+                        n.label.text = StockNames[k] + " " + Mathf.Max(0f, n.left).ToString("0") + "초";
+                        if (n.left <= 0f)
+                        {
+                            stock[k] = StockMax[k];
+                            Toast("📦 " + Ga(n.role) + " " + Reul(StockNames[k]) + " 채웠어요", true);
+                            n.refillKind = -1;
+                            n.state = 0;
+                        }
+                    }
                 }
                 else if (n.task == null)
                 {
@@ -424,7 +498,7 @@ namespace SalonIntern
                 {
                     // 시술석 의자가 날 때까지 기다린다 (너무 오래 걸리면 일을 내려놓고 다른 일을 찾는다)
                     n.rt.localRotation = Quaternion.identity;
-                    n.label.text = n.role + " 의자 대기";
+                    n.label.text = "의자 대기";
                     n.waitT += dt;
                     if (ReserveFor(n.task, n.task.routeIdx)) NpcBeginStep(n);
                     else if (n.waitT > 6f) ReleaseNpc(n);
@@ -450,7 +524,7 @@ namespace SalonIntern
                     n.rt.localRotation = Quaternion.Euler(0f, 0f, Mathf.Sin(Time.time * 9f) * 8f);
                     Request t = n.task;
                     bool routed = t.route != null && t.routeIdx < t.route.Length;
-                    n.label.text = n.role + (routed ? " " + StepNames[t.route[t.routeIdx]] : "") + " " + Mathf.Max(0f, n.left).ToString("0") + "초";
+                    n.label.text = (routed ? StepNames[t.route[t.routeIdx]] : "작업") + " " + Mathf.Max(0f, n.left).ToString("0") + "초";
                     if (t.barFill != null)
                     {
                         float frac = Mathf.Clamp01(1f - n.left / n.total);
@@ -475,7 +549,7 @@ namespace SalonIntern
 
             if (r.isMess)
             {
-                Toast("🧹 " + n.role + "이(가) 바닥을 치웠어요", true);
+                Toast("🧹 " + Ga(n.role) + " 바닥을 치웠어요", true);
                 RemoveRequest(r);
                 RefreshTop();
                 return;
@@ -484,13 +558,13 @@ namespace SalonIntern
             if (r.npcOnly)
             {
                 // 내가 고르지 않은 선생님 일: 점수와 친분 없이 조용히 끝낸다
-                Say(n.role + " " + n.name + "이(가) " + r.designer.name + " 선생님의 " + r.label + "을(를) 끝냈어요");
+                Say(Ga(n.role) + " " + r.designer.name + " 선생님의 " + Reul(r.label) + " 끝냈어요");
                 RemoveRequest(r);
                 return;
             }
 
             // 건수와 점수는 내가 직접 한 일만 센다. 인턴이 끝낸 일은 손님이 만족하고 돌아갈 뿐이다.
-            Toast("✔ " + n.role + " " + n.name + "이(가) " + r.designer.name + " 선생님의 " + r.label + " 완료", true);
+            Toast("✔ " + Ga(n.role) + " " + r.designer.name + " 선생님의 " + r.label + " 완료", true);
             RemoveRequest(r);
             RefreshTop();
         }
@@ -500,7 +574,7 @@ namespace SalonIntern
         {
             if (r.npcBusy)
             {
-                Toast(WorkerName(r.assignee) + "이(가) 하고 있어요", false);
+                Toast(Ga(WorkerName(r.assignee)) + " 하고 있어요", false);
                 return false;
             }
             if (r.assignee > 0)

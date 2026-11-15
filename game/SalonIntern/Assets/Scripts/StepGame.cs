@@ -40,6 +40,8 @@ namespace SalonIntern
         Color fromColor;
         Color toColor;
         Vector2 last;
+        Image hairRoot;
+        Vector2 lastStamp = new Vector2(1e6f, 1e6f);
 
         // 따라 그리기
         const int PointCount = 45;
@@ -54,7 +56,7 @@ namespace SalonIntern
         protected override void Setup()
         {
             scrubMode = Step == 0 || Step == 2 || Step == 3 || Step == 5;
-            pad = MakePad(new Vector2(1400f, 440f), new Vector2(0f, 30f), new Color(0.95f, 0.90f, 0.82f));
+            pad = MakePad(new Vector2(1400f, 440f), new Vector2(0f, 30f), scrubMode ? new Color(0.72f, 0.82f, 0.86f) : new Color(0.95f, 0.90f, 0.82f));
             if (scrubMode) SetupScrub(); else SetupTrace();
             SetCursor(Step == 3 ? CursorKind.Dryer : (Step == 4 ? CursorKind.Scissors : CursorKind.Brush));
             UpdateInfo();
@@ -68,13 +70,27 @@ namespace SalonIntern
             {
                 case 0: fromColor = new Color(0.42f, 0.30f, 0.22f); toColor = new Color(0.97f, 0.99f, 1f); break;
                 case 2: fromColor = new Color(0.42f, 0.30f, 0.22f); toColor = new Color(0.85f, 0.35f, 0.55f); break;
-                case 3: fromColor = new Color(0.35f, 0.55f, 0.85f); toColor = new Color(0.92f, 0.82f, 0.62f); break;
+                case 3: fromColor = new Color(0.27f, 0.18f, 0.14f); toColor = new Color(0.55f, 0.38f, 0.26f); break; // 젖은 머리 -> 마른 머리
                 default: fromColor = new Color(0.42f, 0.30f, 0.22f); toColor = new Color(0.98f, 0.95f, 0.70f); break;
             }
             pad.onDown = p => { last = p; };
             pad.onDrag = Scrub;
 
-            Dot(pad.transform, HairCenter, HairRadius * 2f, new Color(0.30f, 0.20f, 0.15f), "hair_head");
+            // 샴푸처럼 두상 전체(얼굴·귀)를 위에서 본 모습 위에 머리를 올린다
+            Color skin = new Color(0.96f, 0.80f, 0.68f);
+            Image scene = Box(pad.transform, new Vector2(0f, 25f), new Vector2(760f, 440f), Color.white, "shampoo_scene");
+            if (Art.Get("shampoo_scene") == null)
+            {
+                scene.gameObject.SetActive(false);
+                Box(pad.transform, new Vector2(0f, -205f), new Vector2(760f, 60f), new Color(0.95f, 0.95f, 0.98f));
+                Dot(pad.transform, new Vector2(-175f, 5f), 70f, skin);
+                Dot(pad.transform, new Vector2(175f, 5f), 70f, skin);
+                Dot(pad.transform, new Vector2(0f, -115f), 250f, skin);
+                Box(pad.transform, new Vector2(-48f, -190f), new Vector2(40f, 6f), new Color(0.25f, 0.15f, 0.12f));
+                Box(pad.transform, new Vector2(48f, -190f), new Vector2(40f, 6f), new Color(0.25f, 0.15f, 0.12f));
+            }
+            hairRoot = Dot(pad.transform, HairCenter, HairRadius * 2f, fromColor, "hair_head");
+            hairRoot.gameObject.AddComponent<Mask>().showMaskGraphic = true; // 칠한 자국이 머리 모양 밖으로 나가지 않게
             var list = new List<Vector2>();
             const float spacing = 64f;
             for (float y = -HairRadius; y <= HairRadius; y += spacing)
@@ -89,7 +105,7 @@ namespace SalonIntern
             centers = list.ToArray();
             cells = new Image[centers.Length];
             amount = new float[centers.Length];
-            for (int i = 0; i < centers.Length; i++) cells[i] = Dot(pad.transform, centers[i], 58f, fromColor, "hair_blob");
+            for (int i = 0; i < centers.Length; i++) { cells[i] = Dot(pad.transform, centers[i], 58f, fromColor, "hair_blob"); cells[i].enabled = false; } // 진행도 계산용(보이지 않음)
         }
 
         void Scrub(Vector2 p)
@@ -97,11 +113,17 @@ namespace SalonIntern
             if (finished) return;
             float dist = (p - last).magnitude;
             last = p;
+            // 지나간 자리를 머리 위에 직접 칠한다
+            if (hairRoot != null && (p - HairCenter).magnitude < HairRadius + 70f && ((p - lastStamp).magnitude > 22f || lastStamp.x > 99999f))
+            {
+                lastStamp = p;
+                Image st = Dot(hairRoot.transform, p - HairCenter, 150f, toColor, "paint");
+                st.color = toColor;
+            }
             for (int i = 0; i < centers.Length; i++)
             {
                 if ((centers[i] - p).magnitude > 80f) continue;
                 amount[i] = Mathf.Min(1f, amount[i] + dist / 260f);
-                cells[i].color = Color.Lerp(fromColor, toColor, amount[i]);
             }
             if (ScrubPercent() >= 100) Finish();
         }

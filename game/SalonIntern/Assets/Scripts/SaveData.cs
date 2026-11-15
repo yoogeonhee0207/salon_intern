@@ -41,7 +41,35 @@ namespace SalonIntern
         public bool[] achievements;
         public int[] eventSeen;
 
-        const string Key = "SalonIntern.Save";
+        // 저장 칸 3개: 칸 0은 예전 저장 키를 그대로 써서 기존 진행이 첫 칸으로 이어진다
+        public const int SlotCount = 3;
+        public static int Slot;
+        const string BaseKey = "SalonIntern.Save";
+        static string KeyFor(int slot) { return slot <= 0 ? BaseKey : BaseKey + "." + slot; }
+        static string Key { get { return KeyFor(Slot); } }
+
+        public static bool ExistsAt(int slot)
+        {
+            try { return PlayerPrefs.HasKey(KeyFor(slot)); }
+            catch (Exception) { return false; }
+        }
+
+        public static SaveData LoadAt(int slot)
+        {
+            int prev = Slot;
+            Slot = slot;
+            SaveData d = Load();
+            Slot = prev;
+            return d;
+        }
+
+        public static void DeleteAt(int slot)
+        {
+            int prev = Slot;
+            Slot = slot;
+            Delete();
+            Slot = prev;
+        }
 
         public static bool Exists()
         {

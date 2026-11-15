@@ -9,9 +9,9 @@ namespace SalonIntern
     {
         public static bool Lite;
 
-        protected override string Title { get { return lite ? "샴푸  -  직접 해봐요!" : "샴푸 시험  -  적시기, 샴푸, 헹구기"; } }
+        protected override string Title { get { return (lite || Lite) ? "샴푸  -  직접 해봐요!" : "샴푸 시험  -  적시기, 샴푸, 헹구기"; } }
         protected override string Rule { get { return "물 틀기  →  머리 적시기  →  샴푸 짜기  →  거품내기  →  물 틀기  →  헹구기\n수도꼭지·샴푸통을 눌러 준비하고, 머리는 손가락으로 문질러요."; } }
-        protected override float DimAlpha { get { return lite ? 0.88f : 0.97f; } }
+        protected override float DimAlpha { get { return (lite || Lite) ? 0.88f : 0.97f; } }
 
         // 버튼으로 준비하는 단계(물 틀기, 샴푸 짜기)와 머리를 문지르는 단계가 번갈아 나온다
         static readonly string[] StageNames = { "1단계 물 틀기", "2단계 머리 적시기", "3단계 샴푸 짜기", "4단계 거품내기", "5단계 물 틀기", "6단계 헹구기" };
@@ -54,9 +54,9 @@ namespace SalonIntern
         {
             lite = Lite;
             Lite = false;
-            timeLimit = lite ? 18f : 40f;
+            timeLimit = lite ? 15f : 40f;
             timeLeft = timeLimit;
-            need = lite ? 0.8f : 0.9f;
+            need = lite ? 0.85f : 0.9f;
 
             DragPad pad = MakePad(new Vector2(1400f, 440f), new Vector2(0f, 30f), new Color(0.72f, 0.82f, 0.86f));
             pad.onDown = p => { last = p; };
@@ -207,7 +207,10 @@ namespace SalonIntern
             if (finished) return;
             if (lite)
             {
-                int pct = allDone ? 100 : Percent();
+                // 끝까지 마쳐도 시간이 빠듯하면 A, 시간이 넉넉히(40% 이상) 남아야 S. 못 마치면 진행도만큼
+                int pct = allDone
+                    ? Mathf.RoundToInt(Mathf.Lerp(65f, 100f, Mathf.Clamp01(timeLeft / (timeLimit * 0.4f))))
+                    : Percent();
                 string grade = pct >= 85 ? "S" : (pct >= 60 ? "A" : (pct >= 30 ? "B" : "C"));
                 End(true, pct, 100, 0, grade + "등급!  (" + pct + "%)");
             }
