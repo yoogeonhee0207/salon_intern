@@ -435,7 +435,7 @@ namespace SalonIntern
 
         void AddDesignerHelpButton(ExamBase game, Request task, int step)
         {
-            if (TourDay || game == null) return;
+            if (TourDay || game == null || IsPlayerOnlyCut(task)) return; // 가발·모델 커트는 선생님께 맡길 수 없다
             int left = DesignerHelpLimit - dayDesignerHelps;
             string label = left > 0 ? "선생님께 맡기기 (오늘 " + left + "회 남음)" : "선생님께 맡기기 (한도 초과 -" + DesignerHelpPenalty + "점)";
             Button b = UiFactory.MakeButton("DesignerHelp", game.transform, label, 26, new Color(0.45f, 0.50f, 0.70f), () =>

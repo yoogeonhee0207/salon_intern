@@ -119,6 +119,25 @@ namespace SalonIntern
         }
         List<Booking>[] bookingsBySlot;
         // 오늘 같이 일할 선생님 고르기
+        // 커트석: 선생님 자리와 따로 있는 공석 2개(위/아래). 가발·모델 커트 예약은 여기서 한다
+        DesignerData[] cutSeatsCache;
+        DesignerData[] CutSeats
+        {
+            get
+            {
+                if (cutSeatsCache == null)
+                {
+                    cutSeatsCache = new[]
+                    {
+                        new DesignerData { id = 901, name = "커트석", specialty = "", patienceMultiplier = 1f },
+                        new DesignerData { id = 902, name = "커트석", specialty = "", patienceMultiplier = 1f },
+                    };
+                }
+                return cutSeatsCache;
+            }
+        }
+        bool IsCutSeat(DesignerData d) { return d != null && d.id >= 901; }
+        bool[] cutRes; // 아침 예약표의 "내 커트" 줄: 시간 칸마다 내 커트 예약이 있는지
         int PickMax { get { return LevelConfig.PickMax[Mathf.Clamp(level, 0, LevelConfig.PickMax.Length - 1)]; } }
         readonly List<DesignerData> picked = new List<DesignerData>();
         int[,] resProc;
@@ -898,6 +917,20 @@ namespace SalonIntern
                     }
                 }
             }
+            // 내 커트 예약(Lv.5~): 15시 이후 칸 중에서 3~4건을 따로 뽑는다 (선생님 선택과 무관)
+            cutRes = new bool[cols];
+            if (level >= LevelConfig.ProcedureUnlockLevel[4])
+            {
+                List<int> lateSlots = new List<int>();
+                for (int c = 0; c < cols; c++) if (DayConfig.OpenMinutes + c * DayConfig.SlotMinutes >= DayConfig.LateStartMinutes) lateSlots.Add(c);
+                int want = Mathf.Min(lateSlots.Count, Random.Range(3, 5));
+                for (int k = 0; k < want; k++)
+                {
+                    int pickIdx = Random.Range(0, lateSlots.Count);
+                    cutRes[lateSlots[pickIdx]] = true;
+                    lateSlots.RemoveAt(pickIdx);
+                }
+            }
             // 예약 중 하나는 VIP로 가려서 보여준다
             resVip = booked.Count > 0 ? booked[Random.Range(0, booked.Count)] : new Vector2Int(-1, -1);
 
@@ -923,6 +956,17 @@ namespace SalonIntern
                         procedure = resProc[r, c],
                         isVip = picked.Contains(designers[r]) && (resVip.x == r && resVip.y == c),
                         npcOnly = !picked.Contains(designers[r]),
+                    });
+                }
+                // 내 커트 예약: 커트석(위/아래)에 번갈아 앉는다
+                if (cutRes != null && c < cutRes.Length && cutRes[c])
+                {
+                    bookingsBySlot[c].Add(new Booking
+                    {
+                        designer = CutSeats[c % 2],
+                        procedure = 4,
+                        isVip = false,
+                        npcOnly = false,
                     });
                 }
             }
@@ -1021,24 +1065,20 @@ namespace SalonIntern
                     }
                 }
             }
-            // 내 예약 줄: 내가 고른 선생님의 가발·모델 커트(나만 할 수 있는 일)를 시간별로 모아 보여준다
+            // 내 커트 줄: 선생님과 상관없이 오늘 내가 맡을 가발·모델 커트(커트석) 예약을 시간별로 보여준다
             if (myRow)
             {
                 int total = 0;
-                int[] cutAt = new int[cols];
-                for (int r = 0; r < rows; r++)
-                {
-                    if (!picked.Contains(designers[r])) continue;
-                    for (int c = 0; c < cols; c++) if (resProc[r, c] == 4) { cutAt[c]++; total++; }
-                }
+                if (cutRes != null) for (int c = 0; c < cols; c++) if (cutRes[c]) total++;
                 int myIdx = rows + 1;
-                GridCell(0f, nameW, myIdx, rowH, "★ 내 커트 (고른 선생님 기준) " + total + "건", new Color(0.78f, 0.72f, 0.92f), TextDark, 20);
+                GridCell(0f, nameW, myIdx, rowH, "★ 내 커트 (커트석) " + total + "건", new Color(0.78f, 0.72f, 0.92f), TextDark, 20);
                 for (int c = 0; c < cols; c++)
                 {
                     float x0 = nameW + c * colW;
                     float x1 = nameW + (c + 1) * colW;
-                    if (cutAt[c] <= 0) GridCell(x0, x1, myIdx, rowH, "", new Color(1f, 1f, 1f, 0.85f), TextDark, 22);
-                    else GridCell(x0, x1, myIdx, rowH, LevelConfig.ProcedureShortNames[4] + (cutAt[c] > 1 ? "×" + cutAt[c] : ""), ProcedureColors[4], TextDark, 15);
+                    bool has = cutRes != null && c < cutRes.Length && cutRes[c];
+                    if (!has) GridCell(x0, x1, myIdx, rowH, "", new Color(1f, 1f, 1f, 0.85f), TextDark, 22);
+                    else GridCell(x0, x1, myIdx, rowH, LevelConfig.ProcedureShortNames[4], ProcedureColors[4], TextDark, 15);
                 }
             }
             UpdateStartButton();
@@ -1681,6 +1721,7 @@ namespace SalonIntern
             // 예약은 디자이너 일정이라 커트도 처음부터 들어간다 (해금 전에는 견학 카드로 나온다)
             int cutWeight = (reservation || level >= LevelConfig.ProcedureUnlockLevel[4]) ? 25 : 0;
             if (minutes < DayConfig.LateStartMinutes) cutWeight = 0; // 가발·모델 커트는 15시 이후에만 들어온다
+            if (level >= LevelConfig.ProcedureUnlockLevel[4]) cutWeight = 0; // 해금된 뒤의 커트는 선생님이 아니라 커트석 예약으로만 들어온다
             int bleachWeight = level >= LevelConfig.ProcedureUnlockLevel[5] ? 15 : 0; // 탈색도 임시로 모든 디자이너 공통
             int[] weights = { d.shampoo, d.roll, d.dye, d.dry, cutWeight, bleachWeight };
             int total = 0;
@@ -2119,7 +2160,7 @@ namespace SalonIntern
                 if (r.procIdx >= 0 && r.procIdx < practice.Length) practice[r.procIdx]++;
                 int sat = r.satCount > 0 ? Mathf.RoundToInt((float)r.satSum / r.satCount) : 70; // 손님 만족도
                 float mult = 0.7f + 0.6f * sat / 100f;
-                int friendBonus = Mathf.FloorToInt(Closeness(r.designer) / 10f);
+                int friendBonus = IsCutSeat(r.designer) ? 0 : Mathf.FloorToInt(Closeness(r.designer) / 10f);
                 int assignBonus = r.assignee == 0 ? 5 : 0; // 인턴장이 맡긴 일을 해냈을 때
                 int helpBonus = r.npcOnly ? 10 : 0; // 동료 인턴이 휴게 간 사이 그 일을 대신하면 추가 점수 (못 해도 감점은 없다)
                 int gained = Mathf.RoundToInt(StepScore(r) * mult) + (r.isVip ? 30 : (r.isReserved ? 10 : 0)) + friendBonus + assignBonus + helpBonus;
@@ -2127,7 +2168,8 @@ namespace SalonIntern
                 score += gained;
                 string satGrade = sat >= 85 ? "S" : (sat >= 60 ? "A" : (sat >= 30 ? "B" : "C"));
                 int closeDelta = sat >= 85 ? 4 : (sat >= 60 ? 2 : (sat >= 30 ? 0 : -2));
-                AddCloseness(r.designer, closeDelta);
+                if (IsCutSeat(r.designer)) closeDelta = 0;
+                else AddCloseness(r.designer, closeDelta);
                 fatigue = Mathf.Min(100f, fatigue + (r.isProcedure ? 6f : 4f) * FatigueMult());
                 // 손님 만족도에 따라 XP가 달라진다: 시술 S+3 / A+2 / B+1 / C 0 (단순 요청은 S+2 / A+1 / B+1 / C 0)
                 int xpGain = r.isProcedure
@@ -2854,6 +2896,7 @@ namespace SalonIntern
                 Image chair = UiFactory.Panel("Chair", mapArea, new Color(0.55f, 0.50f, 0.50f));
                 if (Art.Apply(chair, "seat_chair")) chair.color = Color.white;
                 PlaceCenter(chair.rectTransform, pos, new Vector2(112f, 112f));
+                if (row == 0) chair.rectTransform.localRotation = Quaternion.Euler(0f, 0f, 180f); // 위쪽 자리는 위의 거울을 보도록 돌린다
 
                 Image seated = Art.Figure("SeatedCustomer_" + designers[i].name, mapArea, new Color(0.96f, 0.78f, 0.66f), "customer_0");
                 seated.raycastTarget = false;
@@ -2869,6 +2912,37 @@ namespace SalonIntern
                 name.horizontalOverflow = HorizontalWrapMode.Overflow;
                 AddNameOutline(name);
                 PlaceCenter(name.rectTransform, new Vector2(pos.x, row == 0 ? sy - 142f : sy + 142f), new Vector2(190f, 30f));
+            }
+
+            // 커트석 2개(위/아래): 선생님 자리 오른쪽 끝, 선생님이 없는 공석
+            for (int k = 0; k < 2; k++)
+            {
+                int row = k;
+                float sy = row == 0 ? 200f : -200f;
+                Vector2 pos = new Vector2(-410f + 5 * 190f, sy);
+                DesignerData cs = CutSeats[k];
+                seats[cs] = pos;
+
+                Image mirror = UiFactory.Panel("CutMirror", mapArea, new Color(0.80f, 0.90f, 0.97f));
+                Art.Apply(mirror, "seat_mirror");
+                PlaceCenter(mirror.rectTransform, pos + new Vector2(0f, row == 0 ? 80f : -80f), new Vector2(34f, 104f));
+                mirror.rectTransform.localRotation = Quaternion.Euler(0f, 0f, 90f);
+
+                Image chair = UiFactory.Panel("CutChair", mapArea, new Color(0.55f, 0.50f, 0.50f));
+                if (Art.Apply(chair, "seat_chair")) chair.color = Color.white;
+                PlaceCenter(chair.rectTransform, pos, new Vector2(112f, 112f));
+                if (row == 0) chair.rectTransform.localRotation = Quaternion.Euler(0f, 0f, 180f); // 위쪽 커트석은 위의 거울을 보도록 돌린다
+
+                Image seated = Art.Figure("SeatedCustomer_Cut" + k, mapArea, new Color(0.96f, 0.78f, 0.66f), "customer_0");
+                seated.raycastTarget = false;
+                PlaceCenter(seated.rectTransform, pos, new Vector2(92f, 92f));
+                seated.gameObject.SetActive(false);
+                seatedCustomers[cs] = seated;
+
+                Text cname = UiFactory.Label("CutName", mapArea, "커트석", 24, DesignerNameColor, TextAnchor.MiddleCenter);
+                cname.horizontalOverflow = HorizontalWrapMode.Overflow;
+                AddNameOutline(cname);
+                PlaceCenter(cname.rectTransform, new Vector2(pos.x, row == 0 ? sy - 142f : sy + 142f), new Vector2(190f, 30f));
             }
 
             // 내 인턴
