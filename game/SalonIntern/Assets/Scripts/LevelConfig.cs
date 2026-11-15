@@ -1,3 +1,5 @@
+using UnityEngine;
+
 namespace SalonIntern
 {
     // 레벨별 규칙 수치. 기획서 4, 8, 10장 기준이며 모두 시작점이라 테스트하며 조정한다.
@@ -11,7 +13,23 @@ namespace SalonIntern
             "신입 인턴", "견습 인턴", "보조 인턴", "숙련 인턴", "베테랑 인턴", "수석 인턴", "졸업반 인턴"
         };
 
-        // 동시에 떠 있을 수 있는 요청 수 (Lv.5~6은 아직 Lv.4와 같게 둠)
+        // 감점은 레벨과 상관없이 같다: 요청 하나를 놓칠 때, 최소 건수에서 한 건 모자랄 때.
+        // 레벨이 오르면 맡는 선생님이 늘어 놓칠 가능성이 커지는 것이 난이도다.
+        public static readonly int[] MissPenalty = { 10, 10, 10, 10, 10, 10, 10 };
+        public static readonly int[] ShortPenalty = { 15, 15, 15, 15, 15, 15, 15 };
+
+        // 오늘 같이 일할 선생님 수 (Lv.0 1명 ~ Lv.6 8명). 예약표를 보고 정확히 이 수만큼 고르고, 나머지 선생님과 내 일도 동료 인턴이 함께 본다.
+        public static readonly int[] PickMax = { 1, 2, 3, 4, 5, 7, 8 };
+
+        // 내 레벨별 동료 인턴 3명의 레벨. 레벨 총합(나 + 동료 3명)이 15로 일정하다.
+        // 내 레벨이 오를수록 선배는 줄고 나보다 낮은 후배가 늘어난다.
+        public static readonly int[][] NpcLevels =
+        {
+            new[] { 6, 5, 4 }, new[] { 6, 5, 3 }, new[] { 6, 4, 3 }, new[] { 5, 4, 3 },
+            new[] { 4, 4, 3 }, new[] { 4, 3, 3 }, new[] { 3, 3, 3 },
+        };
+
+        // 동시에 떠 있을 수 있는 내 요청 수 (고른 선생님 일만 센다. 선생님 한 명당 한 장)
         public static readonly int[] MaxConcurrent = { 2, 2, 3, 4, 5, 5, 5 };
 
         // 하루에 받는 시술 요청 수(이만큼 받아 모두 처리되면 그날 마감)
@@ -45,12 +63,13 @@ namespace SalonIntern
         // 테스트용: true면 경험치와 시험 응시 조건을 최하로 낮춘다. 출시 전에 false로 바꿀 것.
         public const bool TestMode = false;
 
+        static readonly int[] NeedXp = { 8, 22, 28, 33, 34, 43, 44 };
+
         public static int XpToNext(int level)
         {
             if (TestMode) return 1;
-            // Lv.0은 견학 4종(각 XP +2)만 해도 바로 Lv.1이 되도록 8로 낮춤
-            if (level == 0) return 8;
-            return 10 + 5 * level;
+            // 졸업까지 총 플레이 시간이 약 2시간(약 24일)이 되도록 맞춘 값. Lv.0은 견학만 해도 바로 Lv.1
+            return NeedXp[Mathf.Clamp(level, 0, NeedXp.Length - 1)];
         }
     }
 }

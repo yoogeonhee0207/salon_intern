@@ -60,8 +60,21 @@ namespace SalonIntern
             }
             else if (pausing)
             {
-                Text note = UiFactory.Label("SettingsNote", box.transform, "영업 중에는 시간이 멈춰요", 24, new Color(0.45f, 0.42f, 0.40f), TextAnchor.MiddleCenter);
-                UiFactory.Stretch(note.rectTransform, 0.05f, 0.10f, 0.95f, 0.22f);
+                // 오늘 영업을 일찍 마치고 싶을 때: 두 번 눌러야 실행 (최소 건수를 못 채우면 점수가 깎인다)
+                bool armed = false;
+                Button endBtn = UiFactory.MakeButton("SettingsEndDay", box.transform, "오늘 영업 마치기", 28, new Color(0.65f, 0.40f, 0.30f), null);
+                endBtn.onClick.AddListener(() =>
+                {
+                    if (!armed)
+                    {
+                        armed = true;
+                        endBtn.GetComponentInChildren<Text>().text = "정말 마칠까요? (한 번 더)";
+                        return;
+                    }
+                    CloseSettings();
+                    EndBusiness();
+                });
+                UiFactory.Stretch(endBtn.GetComponent<RectTransform>(), 0.12f, 0.10f, 0.88f, 0.22f);
             }
         }
 
@@ -484,14 +497,14 @@ namespace SalonIntern
         // ---------- 시술석 의자 ----------
 
         // 시술석에는 의자가 있고 의자 하나에 손님 한 명만 앉는다. 레벨이 오르면 의자가 늘어난다.
-        const int MaxChairs = 3;
-        static readonly float[] ChairY = { 30f, -55f, -140f };
+        const int MaxChairs = 5;
+        static readonly float[] ChairY = { 55f, -5f, -65f, -125f, -185f };
         readonly Request[] chairOwner = new Request[MaxChairs];
         readonly Image[] chairImages = new Image[MaxChairs];
         readonly Text[] chairTexts = new Text[MaxChairs];
         Request chairWaiter;   // 의자가 나기를 기다리는 손님의 요청
 
-        int ChairCount { get { return level >= 3 ? 3 : 2; } }
+        int ChairCount { get { return MaxChairs; } }
 
         Vector2 ChairPos(int i) { return new Vector2(775f, ChairY[Mathf.Clamp(i, 0, MaxChairs - 1)]); }
 
@@ -540,7 +553,7 @@ namespace SalonIntern
             {
                 Image c = UiFactory.Panel("Chair" + i, mapArea, new Color(0.95f, 0.85f, 0.70f));
                 Art.Apply(c, "ui_bubble", 28f);
-                PlaceCenter(c.rectTransform, ChairPos(i), new Vector2(200f, 70f));
+                PlaceCenter(c.rectTransform, ChairPos(i), new Vector2(200f, 54f));
                 chairImages[i] = c;
                 chairTexts[i] = UiFactory.Label("Text", c.transform, "", 22, TextDark, TextAnchor.MiddleCenter);
             }
@@ -575,7 +588,7 @@ namespace SalonIntern
         // ---------- 시술 중 대기 (염색약이 작용하는 시간 등) ----------
 
         // 단계를 끝낸 뒤 손님이 의자에 앉아서 기다리는 시간 (게임 속 분). 샴푸 0, 펌 1, 염색 2, 드라이 3, 커트 4, 탈색 5
-        static readonly int[] StepWaitMin = { 0, 20, 15, 0, 0, 20 };
+        static readonly int[] StepWaitMin = { 0, 20, 15, 0, 15, 20 };
 
         float SecPerMinute { get { return DayConfig.BusinessSeconds / (float)(DayConfig.CloseMinutes - DayConfig.OpenMinutes); } }
 
@@ -593,7 +606,7 @@ namespace SalonIntern
             playerWalking = false;
             waitingAtStation = false;
             task.background.color = new Color(0.80f, 0.88f, 0.98f);
-            Say(StepNames[step] + " 약이 작용하는 중이에요 (" + wait + "분). 그동안 다른 일을 해요!");
+            Say(step == 4 ? "선생님이 커트하는 중이에요 (" + wait + "분). 그동안 다른 일을 해요!" : StepNames[step] + " 약이 작용하는 중이에요 (" + wait + "분). 그동안 다른 일을 해요!");
         }
 
         // 대기 시간 보상과 방치 벌점 (게임 분)
@@ -634,7 +647,7 @@ namespace SalonIntern
                     r.background.color = new Color(0.78f, 0.93f, 0.78f);
                     r.barFill.anchorMax = new Vector2(1f, 1f);
                     r.barFillImage.color = BarGreen;
-                    Toast("✔ " + r.designer.name + " 선생님 손님의 " + StepNames[step] + " 대기가 끝났어요! 모시러 가요", true);
+                    if (r.assignee == 0) Toast("✔ " + r.designer.name + " 선생님 손님의 " + StepNames[step] + " 대기가 끝났어요! 모시러 가요", true);
                     continue;
                 }
                 int leftMin = Mathf.CeilToInt(left / SecPerMinute);
@@ -654,7 +667,7 @@ namespace SalonIntern
                 float over = OverMinutes(r);
                 if (over <= 0f) continue;
                 int step = r.route[r.routeIdx - 1];
-                r.bodyText.text = r.titleBase + "\n⚠ " + StepNames[step] + " 약 과해요 +" + Mathf.CeilToInt(over) + "분";
+                r.bodyText.text = r.titleBase + "\n⚠ " + StepNames[step] + (step == 4 ? " 손님이 기다려요 +" : " 약 과해요 +") + Mathf.CeilToInt(over) + "분";
                 r.background.color = new Color(0.98f, 0.82f, 0.60f);
                 r.barFillImage.color = new Color(0.90f, 0.50f, 0.20f);
             }
@@ -780,6 +793,7 @@ namespace SalonIntern
         {
             if (playerUniform != null) playerUniform.color = CursorSkins.MainColor(6);
             else if (playerImage != null) playerImage.color = CursorSkins.MainColor(6);
+            ApplyNpcUniform();
             if (floorImage != null) floorImage.color = CursorSkins.MainColor(7);
             if (corridorImage != null) corridorImage.color = CursorSkins.AccentColor(7);
         }

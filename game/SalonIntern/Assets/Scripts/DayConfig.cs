@@ -14,9 +14,11 @@ namespace SalonIntern
         // 현실 1초 동안 흐르는 게임 속 분 (240초 동안 480분 -> 2분)
         public const float MinutesPerSecond = (CloseMinutes - OpenMinutes) / BusinessSeconds;
 
-        // 아침 예약표: 10시부터 1시간 단위로 8칸(10~17시), 칸마다 예약이 있을 확률
-        public const int ReservationSlots = 8;
-        public const float ReservationChance = 0.18f;
+        // 아침 예약표: 10시부터 30분 단위로 16칸(10:00~17:30), 칸마다 예약이 있을 확률
+        // (칸이 두 배, 인턴이 늘었으니 칸당 확률 0.16. 고르지 않은 선생님의 예약은 동료 인턴이 처리하니 예약이 많아야 인턴이 놀지 않는다)
+        public const int SlotMinutes = 30;
+        public const int ReservationSlots = (CloseMinutes - OpenMinutes) / SlotMinutes;
+        public const float ReservationChance = 0.16f;
 
         // 오늘의 목표 점수 (임시 공식)
         public static int TargetScore(int level)
