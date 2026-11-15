@@ -1,3 +1,5 @@
+using UnityEngine;
+
 namespace SalonIntern
 {
     // 하루 구조 수치. 기획서 2장 기준이며 모두 시작점이라 테스트하며 조정한다.
@@ -20,10 +22,13 @@ namespace SalonIntern
         public const int ReservationSlots = (CloseMinutes - OpenMinutes) / SlotMinutes;
         public const float ReservationChance = 0.16f;
 
-        // 오늘의 목표 점수 (임시 공식)
+        // 오늘의 목표 점수. 레벨별로 보수적으로 예상한 하루 점수의 약 70% (A등급), 1.2배면 S등급.
+        // 예상 하루 점수(인턴이 도운 뒤 내가 직접 한 일만): Lv.1 약 160, Lv.2 약 180, Lv.3 약 240, Lv.4 약 260, Lv.5 약 300, Lv.6 약 325
+        static readonly int[] TargetByLevel = { 60, 110, 125, 165, 180, 210, 230 };
+
         public static int TargetScore(int level)
         {
-            return LevelConfig.DailyQuota[level] * 30; // 하루 목표 건수 x 건당 평균 점수
+            return TargetByLevel[Mathf.Clamp(level, 0, TargetByLevel.Length - 1)];
         }
 
         // 하루 평가 등급
