@@ -29,37 +29,54 @@ namespace SalonIntern
             settingsPanel = dim.rectTransform;
             settingsPanel.SetAsLastSibling();
 
+            bool menu = !titleUp;   // 아침/저녁/영업 중: 상점·업적 등 메뉴를 함께 보여준다 (영업 중에는 시작 화면·처음부터 다시만 뺀다)
             Image box = UiFactory.Panel("SettingsBox", settingsPanel, new Color(0.96f, 0.93f, 0.88f));
             Art.Apply(box, "ui_panel", 32f);
-            UiFactory.Stretch(box.rectTransform, 0.30f, 0.14f, 0.70f, 0.86f);
+            if (menu) UiFactory.Stretch(box.rectTransform, 0.28f, 0.03f, 0.72f, 0.97f);
+            else UiFactory.Stretch(box.rectTransform, 0.30f, 0.14f, 0.70f, 0.86f);
 
-            Text head = UiFactory.Label("SettingsTitle", box.transform, pausing ? "일시정지" : "설정", 44, TextDark, TextAnchor.MiddleCenter);
-            UiFactory.Stretch(head.rectTransform, 0f, 0.84f, 1f, 0.97f);
+            Text head = UiFactory.Label("SettingsTitle", box.transform, pausing ? "일시정지" : "메뉴", 44, TextDark, TextAnchor.MiddleCenter);
+            UiFactory.Stretch(head.rectTransform, 0f, menu ? 0.89f : 0.84f, 1f, menu ? 0.98f : 0.97f);
 
             Button sound = UiFactory.MakeButton("SoundToggle", box.transform, SoundLabel(), 32, new Color(0.40f, 0.50f, 0.45f), null);
             sound.onClick.AddListener(() => { Sfx.Toggle(); sound.GetComponentInChildren<Text>().text = SoundLabel(); });
-            UiFactory.Stretch(sound.GetComponent<RectTransform>(), 0.12f, 0.66f, 0.88f, 0.80f);
+            UiFactory.Stretch(sound.GetComponent<RectTransform>(), 0.12f, menu ? 0.77f : 0.66f, 0.88f, menu ? 0.87f : 0.80f);
 
+            float vy0 = menu ? 0.65f : 0.48f, vy1 = menu ? 0.75f : 0.62f;
             Text volLabel = UiFactory.Label("VolumeLabel", box.transform, VolumeLabel(), 32, TextDark, TextAnchor.MiddleCenter);
-            UiFactory.Stretch(volLabel.rectTransform, 0.34f, 0.48f, 0.66f, 0.62f);
+            UiFactory.Stretch(volLabel.rectTransform, 0.34f, vy0, 0.66f, vy1);
             Button volDown = UiFactory.MakeButton("VolDown", box.transform, "-", 40, new Color(0.45f, 0.45f, 0.55f), null);
             volDown.onClick.AddListener(() => { Sfx.SetVolume(Sfx.Volume - 0.1f); volLabel.text = VolumeLabel(); Sfx.Play(Sfx.Kind.Click); });
-            UiFactory.Stretch(volDown.GetComponent<RectTransform>(), 0.12f, 0.48f, 0.32f, 0.62f);
+            UiFactory.Stretch(volDown.GetComponent<RectTransform>(), 0.12f, vy0, 0.32f, vy1);
             Button volUp = UiFactory.MakeButton("VolUp", box.transform, "+", 40, new Color(0.30f, 0.60f, 0.45f), null);
             volUp.onClick.AddListener(() => { Sfx.SetVolume(Sfx.Volume + 0.1f); volLabel.text = VolumeLabel(); Sfx.Play(Sfx.Kind.Click); });
-            UiFactory.Stretch(volUp.GetComponent<RectTransform>(), 0.68f, 0.48f, 0.88f, 0.62f);
+            UiFactory.Stretch(volUp.GetComponent<RectTransform>(), 0.68f, vy0, 0.88f, vy1);
 
-            Button close = UiFactory.MakeButton("SettingsClose", box.transform, pausing ? "계속하기" : "닫기", 36, new Color(0.30f, 0.60f, 0.45f), CloseSettings);
-            UiFactory.Stretch(close.GetComponent<RectTransform>(), 0.12f, 0.28f, 0.88f, 0.42f);
+            if (menu)
+            {
+                // 상점, 업적
+                Button shopB = UiFactory.MakeButton("MenuShop", box.transform, "상점 (" + points + "P)", 28, new Color(0.35f, 0.50f, 0.65f), OpenShop);
+                UiFactory.Stretch(shopB.GetComponent<RectTransform>(), 0.08f, 0.52f, 0.52f, 0.62f);
+                shopButtonText = shopB.GetComponentInChildren<Text>();
+                Button achB = UiFactory.MakeButton("MenuAch", box.transform, "업적", 28, new Color(0.60f, 0.50f, 0.30f), OpenAchievements);
+                UiFactory.Stretch(achB.GetComponent<RectTransform>(), 0.54f, 0.52f, 0.92f, 0.62f);
 
-            // 시작 화면으로 나가기는 영업 중이 아닐 때만 (아침, 저녁에만)
-            if (!titleUp && phase != Phase.Business)
-            {
-                Button toTitleBtn = UiFactory.MakeButton("SettingsToTitle", box.transform, "시작 화면으로", 28, new Color(0.40f, 0.45f, 0.55f), () => { CloseSettings(); ShowTitle(); });
-                UiFactory.Stretch(toTitleBtn.GetComponent<RectTransform>(), 0.12f, 0.10f, 0.88f, 0.22f);
-            }
-            else if (pausing)
-            {
+                if (!pausing)
+                {
+                    // 시작 화면, 처음부터 다시 (영업 중에는 숨김)
+                    Button titleB = UiFactory.MakeButton("MenuTitle", box.transform, "시작 화면", 28, new Color(0.40f, 0.45f, 0.55f), () => { CloseSettings(); ShowTitle(); });
+                    UiFactory.Stretch(titleB.GetComponent<RectTransform>(), 0.08f, 0.39f, 0.52f, 0.49f);
+                    Button resetB = UiFactory.MakeButton("MenuReset", box.transform, "처음부터 다시", 26, new Color(0.55f, 0.35f, 0.35f), null);
+                    resetButtonText = resetB.GetComponentInChildren<Text>();
+                    resetB.onClick.AddListener(() => { bool wasArmed = resetArmed; OnResetPressed(); if (wasArmed) CloseSettings(); });
+                    UiFactory.Stretch(resetB.GetComponent<RectTransform>(), 0.54f, 0.39f, 0.92f, 0.49f);
+                    Button closeM = UiFactory.MakeButton("SettingsClose", box.transform, "닫기", 36, new Color(0.30f, 0.60f, 0.45f), CloseSettings);
+                    UiFactory.Stretch(closeM.GetComponent<RectTransform>(), 0.12f, 0.15f, 0.88f, 0.30f);
+                    return;
+                }
+
+                Button closeP = UiFactory.MakeButton("SettingsClose", box.transform, "계속하기", 36, new Color(0.30f, 0.60f, 0.45f), CloseSettings);
+                UiFactory.Stretch(closeP.GetComponent<RectTransform>(), 0.12f, 0.28f, 0.88f, 0.44f);
                 // 오늘 영업을 일찍 마치고 싶을 때: 두 번 눌러야 실행 (최소 건수를 못 채우면 점수가 깎인다)
                 bool armed = false;
                 Button endBtn = UiFactory.MakeButton("SettingsEndDay", box.transform, "오늘 영업 마치기", 28, new Color(0.65f, 0.40f, 0.30f), null);
@@ -74,14 +91,55 @@ namespace SalonIntern
                     CloseSettings();
                     EndBusiness();
                 });
-                UiFactory.Stretch(endBtn.GetComponent<RectTransform>(), 0.12f, 0.10f, 0.88f, 0.22f);
+                UiFactory.Stretch(endBtn.GetComponent<RectTransform>(), 0.12f, 0.10f, 0.88f, 0.24f);
+                return;
             }
+
+            Button close = UiFactory.MakeButton("SettingsClose", box.transform, "닫기", 36, new Color(0.30f, 0.60f, 0.45f), CloseSettings);
+            UiFactory.Stretch(close.GetComponent<RectTransform>(), 0.12f, 0.28f, 0.88f, 0.42f);
         }
 
         void CloseSettings()
         {
             if (settingsPanel != null) Destroy(settingsPanel.gameObject);
             settingsPanel = null;
+            Time.timeScale = 1f;
+        }
+
+        // ---------- 영업 중 예약표 다시 보기 ----------
+
+        RectTransform resViewPanel;
+
+        void OpenReservationView()
+        {
+            if (resViewPanel != null || settingsPanel != null || phase != Phase.Business || minigameActive) return;
+            Time.timeScale = 0f;
+
+            Image dim = UiFactory.Panel("ResViewDim", canvasRoot, new Color(0f, 0f, 0f, 0.70f));
+            UiFactory.Stretch(dim.rectTransform, 0f, 0f, 1f, 1f);
+            resViewPanel = dim.rectTransform;
+            resViewPanel.SetAsLastSibling();
+
+            Image box = UiFactory.Panel("ResViewBox", resViewPanel, new Color(0.96f, 0.93f, 0.88f));
+            Art.Apply(box, "ui_panel", 32f);
+            UiFactory.Stretch(box.rectTransform, 0.04f, 0.06f, 0.96f, 0.94f);
+
+            Text head = UiFactory.Label("ResViewTitle", box.transform, "오늘의 예약표  (지금 " + DayConfig.FormatClock(ClockMinutes()) + ")", 38, TextDark, TextAnchor.MiddleCenter);
+            UiFactory.Stretch(head.rectTransform, 0f, 0.90f, 1f, 0.99f);
+
+            RectTransform area = UiFactory.Rect("ResViewGrid", box.transform);
+            UiFactory.Stretch(area, 0.02f, 0.14f, 0.98f, 0.90f);
+            int nowSlot = Mathf.Clamp((ClockMinutes() - DayConfig.OpenMinutes) / DayConfig.SlotMinutes, 0, DayConfig.ReservationSlots - 1);
+            DrawReservationGridInto(area, false, nowSlot);
+
+            Button close = UiFactory.MakeButton("ResViewClose", box.transform, "닫기", 34, new Color(0.30f, 0.60f, 0.45f), CloseReservationView);
+            UiFactory.Stretch(close.GetComponent<RectTransform>(), 0.38f, 0.02f, 0.62f, 0.11f);
+        }
+
+        void CloseReservationView()
+        {
+            if (resViewPanel != null) Destroy(resViewPanel.gameObject);
+            resViewPanel = null;
             Time.timeScale = 1f;
         }
 

@@ -23,6 +23,7 @@ namespace SalonIntern
         public const float ReservationChance = 0.32f;       // 15시 전
         public const float ReservationChanceLate = 0.20f;   // 15시 이후는 예약이 줄고, 대신 가발·모델 커트가 들어온다
         public const int LateStartMinutes = 15 * 60;
+        public const int CutStartMinutes = 16 * 60;         // 가발·모델 커트는 16시부터 들어온다
 
         public static float ChanceAt(int slot)
         {

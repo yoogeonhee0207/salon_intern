@@ -41,9 +41,6 @@ namespace SalonIntern
         // 요청 제한시간(초). 디자이너 참을성 배율이 곱해진다.
         public static readonly float[] TimeLimit = { 38f, 33f, 28f, 23f, 18f, 18f, 18f };
 
-        // 요청 중 잡무 비율 (나머지는 시술 요청)
-        public static readonly float[] ChoreRatio = { 0.45f, 0.40f, 0.33f, 0.27f, 0.22f, 0.20f, 0.20f };
-
         // 아직 못 하는 시술 요청이 뽑혔을 때 화면에 보여줄 확률
         public static readonly float[] LockedShowRate = { 0.15f, 0.15f, 0.12f, 0.10f, 0f, 0f, 0f };
 

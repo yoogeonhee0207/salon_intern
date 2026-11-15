@@ -71,12 +71,6 @@ namespace SalonIntern
             Slot = prev;
         }
 
-        public static bool Exists()
-        {
-            try { return PlayerPrefs.HasKey(Key); }
-            catch (Exception) { return false; }
-        }
-
         public static SaveData Load()
         {
             try

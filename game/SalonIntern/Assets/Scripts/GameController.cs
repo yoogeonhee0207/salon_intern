@@ -196,7 +196,7 @@ namespace SalonIntern
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         static void Bootstrap()
         {
-            if (FindFirstObjectByType<GameController>() != null) return;
+            if (FindAnyObjectByType<GameController>() != null) return;
             new GameObject("GameController").AddComponent<GameController>();
         }
 
@@ -642,13 +642,10 @@ namespace SalonIntern
         // ---------- 시작 화면 ----------
 
         RectTransform titlePanel;
-        Text titleNewText;
-        bool newArmed;
 
         void ShowTitle()
         {
             if (titlePanel != null) Destroy(titlePanel.gameObject);
-            newArmed = false;
             deleteArmedSlot = -1;
 
             Image bg = UiFactory.Panel("TitlePanel", canvasRoot, new Color(0.14f, 0.16f, 0.26f));
@@ -706,7 +703,7 @@ namespace SalonIntern
                 }
             }
 
-            Button snd = UiFactory.MakeButton("Sound", titlePanel, "설정", 24, new Color(0.40f, 0.45f, 0.55f), OpenSettings);
+            Button snd = UiFactory.MakeButton("Sound", titlePanel, "메뉴", 24, new Color(0.40f, 0.45f, 0.55f), OpenSettings);
             UiFactory.Stretch(snd.GetComponent<RectTransform>(), 0.02f, 0.03f, 0.16f, 0.09f);
 
             Text ver = UiFactory.Label("Version", titlePanel, "프로토타입 v0.5", 22, new Color(0.60f, 0.64f, 0.75f), TextAnchor.LowerRight);
@@ -917,12 +914,12 @@ namespace SalonIntern
                     }
                 }
             }
-            // 내 커트 예약(Lv.5~): 15시 이후 칸 중에서 3~4건을 따로 뽑는다 (선생님 선택과 무관)
+            // 내 커트 예약(Lv.5~): 16시 이후 칸 중에서 3~4건을 따로 뽑는다 (선생님 선택과 무관)
             cutRes = new bool[cols];
             if (level >= LevelConfig.ProcedureUnlockLevel[4])
             {
                 List<int> lateSlots = new List<int>();
-                for (int c = 0; c < cols; c++) if (DayConfig.OpenMinutes + c * DayConfig.SlotMinutes >= DayConfig.LateStartMinutes) lateSlots.Add(c);
+                for (int c = 0; c < cols; c++) if (DayConfig.OpenMinutes + c * DayConfig.SlotMinutes >= DayConfig.CutStartMinutes) lateSlots.Add(c);
                 int want = Mathf.Min(lateSlots.Count, Random.Range(3, 5));
                 for (int k = 0; k < want; k++)
                 {
@@ -1011,7 +1008,16 @@ namespace SalonIntern
 
         void DrawReservationGrid()
         {
-            foreach (Transform child in reservationArea) Destroy(child.gameObject);
+            DrawReservationGridInto(reservationArea, true, -1);
+            UpdateStartButton();
+        }
+
+        // 예약표를 그린다. interactive=false면 보기 전용(영업 중 다시 보기), nowSlot은 지금 시간 칸(-1이면 표시 안 함)
+        RectTransform gridTarget;
+        void DrawReservationGridInto(RectTransform area, bool interactive, int nowSlot)
+        {
+            gridTarget = area;
+            foreach (Transform child in area) Destroy(child.gameObject);
 
             int rows = designers.Length;
             int cols = DayConfig.ReservationSlots;
@@ -1026,11 +1032,11 @@ namespace SalonIntern
             Color emptyBg = new Color(1f, 1f, 1f, 0.85f);
 
             // 맨 윗줄: 시간
-            GridCell(0f, nameW, 0, rowH, "선생님 이름을 눌러 고르기", headerBg, Color.white, 20);
+            GridCell(0f, nameW, 0, rowH, interactive ? "선생님 이름을 눌러 고르기" : "✔ = 내가 맡은 선생님", headerBg, Color.white, 20);
             for (int c = 0; c < cols; c++)
             {
                 string time = DayConfig.FormatClock(DayConfig.OpenMinutes + c * DayConfig.SlotMinutes);
-                GridCell(nameW + c * colW, nameW + (c + 1) * colW, 0, rowH, time, headerBg, Color.white, 15);
+                GridCell(nameW + c * colW, nameW + (c + 1) * colW, 0, rowH, time, c == nowSlot ? new Color(0.85f, 0.65f, 0.15f) : headerBg, Color.white, 15);
             }
 
             // 디자이너 한 명당 한 줄
@@ -1040,15 +1046,19 @@ namespace SalonIntern
                 bool isPicked = picked.Contains(d);
                 int row = r;
                 Image nameCell = GridCell(0f, nameW, r + 1, rowH, (isPicked ? "✔ " : "") + d.name + " · " + d.specialty + HeartText(d), isPicked ? pickedBg : nameBg, TextDark, 20);
-                Button nameButton = nameCell.gameObject.AddComponent<Button>();
-                nameButton.targetGraphic = nameCell;
-                nameButton.onClick.AddListener(() => TogglePicked(row));
+                if (interactive)
+                {
+                    Button nameButton = nameCell.gameObject.AddComponent<Button>();
+                    nameButton.targetGraphic = nameCell;
+                    nameButton.onClick.AddListener(() => TogglePicked(row));
+                }
 
                 for (int c = 0; c < cols; c++)
                 {
                     float x0 = nameW + c * colW;
                     float x1 = nameW + (c + 1) * colW;
                     float dim = isPicked ? 1f : 0.55f; // 고르지 않은 선생님 줄은 흐리게
+                    if (nowSlot >= 0 && c < nowSlot) dim *= 0.45f; // 이미 지난 시간은 더 흐리게
 
                     if (resProc[r, c] < 0)
                     {
@@ -1081,7 +1091,7 @@ namespace SalonIntern
                     else GridCell(x0, x1, myIdx, rowH, LevelConfig.ProcedureShortNames[4], ProcedureColors[4], TextDark, 15);
                 }
             }
-            UpdateStartButton();
+            gridTarget = null;
         }
 
         void UpdateStartButton()
@@ -1097,7 +1107,7 @@ namespace SalonIntern
             float yMax = 1f - row * rowH;
             float yMin = yMax - rowH;
 
-            Image cell = UiFactory.Panel("Cell", reservationArea, bg);
+            Image cell = UiFactory.Panel("Cell", gridTarget != null ? gridTarget : reservationArea, bg);
             UiFactory.Stretch(cell.rectTransform, x0, yMin, x1, yMax);
             cell.rectTransform.offsetMin = new Vector2(1.5f, 1.5f);
             cell.rectTransform.offsetMax = new Vector2(-1.5f, -1.5f);
@@ -1137,7 +1147,6 @@ namespace SalonIntern
         static readonly float[] StockDrainMin = { 8f, 10f, 10f, 14f };    // 시간으로 1개 줄어드는 간격(현실 초)
         static readonly float[] StockDrainMax = { 14f, 16f, 16f, 26f };
         // 시술을 끝내면 줄어드는 재료: 샴푸 / 펌 / 염색 / 드라이
-        static readonly int[][] ProcedureUses = { new[] { 0 }, new[] { 1, 2 }, new[] { 1, 0 }, new[] { 0, 3 }, new[] { 1 } };
         readonly int[] stock = { 30, 20, 20, 5 };
         readonly float[] stockDrain = new float[4];      // 다음에 1개 줄어들 때까지 현실 초
         readonly float[] scoldCooldown = new float[4];   // 같은 재료로 연달아 혼나지 않게
@@ -1146,7 +1155,6 @@ namespace SalonIntern
         int refillKind;
         float refillProgress;    // 채우기 진행 (0~1)
         int refillStartStock;
-        int refilledTotal;
         RectTransform supplyChoicePanel;
 
         // 피로도가 쌓일수록 요청 제한시간이 짧아진다 (최대 30%)
@@ -1260,17 +1268,6 @@ namespace SalonIntern
             Say("선생님들 잔소리: " + Ga(StockNames[k]) + " 떨어졌잖아! (점수 -" + ScoldSupplyPenalty + ")");
             Toast("✖ " + Ga(StockNames[k]) + " 떨어졌어요!  점수 -" + ScoldSupplyPenalty, false);
             RefreshTop();
-        }
-
-        // 시술을 끝내면 쓰이는 재료가 줄어든다. 없으면 바로 혼난다
-        void ConsumeFor(int procedure)
-        {
-            if (procedure < 0 || procedure >= ProcedureUses.Length) return;
-            foreach (int k in ProcedureUses[procedure])
-            {
-                if (stock[k] > 0) stock[k]--;
-                else ScoldSupply(k);
-            }
         }
 
         void StartSupply()
@@ -1720,7 +1717,7 @@ namespace SalonIntern
             // 커트는 Lv.5부터 모든 디자이너가 같은 비율로 요청 (임시)
             // 예약은 디자이너 일정이라 커트도 처음부터 들어간다 (해금 전에는 견학 카드로 나온다)
             int cutWeight = (reservation || level >= LevelConfig.ProcedureUnlockLevel[4]) ? 25 : 0;
-            if (minutes < DayConfig.LateStartMinutes) cutWeight = 0; // 가발·모델 커트는 15시 이후에만 들어온다
+            if (minutes < DayConfig.CutStartMinutes) cutWeight = 0; // 가발·모델 커트는 16시 이후에만 들어온다
             if (level >= LevelConfig.ProcedureUnlockLevel[4]) cutWeight = 0; // 해금된 뒤의 커트는 선생님이 아니라 커트석 예약으로만 들어온다
             int bleachWeight = level >= LevelConfig.ProcedureUnlockLevel[5] ? 15 : 0; // 탈색도 임시로 모든 디자이너 공통
             int[] weights = { d.shampoo, d.roll, d.dye, d.dry, cutWeight, bleachWeight };
@@ -2138,6 +2135,12 @@ namespace SalonIntern
             }
         }
 
+        // 대기 보너스·지연 감점 (제한시간 대비 남은 비율 기준)
+        const float WaitFastRatio = 0.6f;
+        const float WaitSlowRatio = 0.25f;
+        const int WaitFastBonus = 5;
+        const int WaitSlowPenalty = 5;
+
         void PerformRequest(Request r)
         {
             if (phase != Phase.Business) return;
@@ -2163,7 +2166,14 @@ namespace SalonIntern
                 int friendBonus = IsCutSeat(r.designer) ? 0 : Mathf.FloorToInt(Closeness(r.designer) / 10f);
                 int assignBonus = r.assignee == 0 ? 5 : 0; // 인턴장이 맡긴 일을 해냈을 때
                 int helpBonus = r.npcOnly ? 10 : 0; // 동료 인턴이 휴게 간 사이 그 일을 대신하면 추가 점수 (못 해도 감점은 없다)
-                int gained = Mathf.RoundToInt(StepScore(r) * mult) + (r.isVip ? 30 : (r.isReserved ? 10 : 0)) + friendBonus + assignBonus + helpBonus;
+                // 손님을 기다리게 한 정도: 제한시간이 60% 이상 남았을 때 끝내면 +5, 25% 아래로 줄어든 뒤에 끝내면 -5
+                int waitDelta = 0;
+                if (!r.npcOnly && r.timeLimit > 0f)
+                {
+                    float left = Mathf.Clamp01(r.remaining / r.timeLimit);
+                    waitDelta = left >= WaitFastRatio ? WaitFastBonus : (left < WaitSlowRatio ? -WaitSlowPenalty : 0);
+                }
+                int gained = Mathf.RoundToInt(StepScore(r) * mult) + (r.isVip ? 30 : (r.isReserved ? 10 : 0)) + friendBonus + assignBonus + helpBonus + waitDelta;
                 gained = Mathf.Max(0, gained + OnRequestCompleted(r, sat));
                 score += gained;
                 string satGrade = sat >= 85 ? "S" : (sat >= 60 ? "A" : (sat >= 30 ? "B" : "C"));
@@ -2177,7 +2187,7 @@ namespace SalonIntern
                     : (sat >= 85 ? 2 : (sat >= 60 ? 1 : (sat >= 30 ? 1 : 0)));
                 AddXp(xpGain);
                 Say(OwnerTitle(r) + "의 " + r.label + " 완료!" + (lastReaction.Length > 0 ? "  " + lastReaction : ""));
-                Toast("✔ " + OwnerTitle(r) + "의 " + r.label + " 완료!  만족도 " + satGrade + "   +" + gained + "점  XP +" + xpGain + (assignBonus > 0 ? "  (맡은 일 +5)" : "") + (helpBonus > 0 ? "  (동료 대신 +10)" : "") + (closeDelta > 0 ? "  ♥친분 +" + closeDelta : (closeDelta < 0 ? "  ♥친분 " + closeDelta : "")), sat >= 30);
+                Toast("✔ " + OwnerTitle(r) + "의 " + r.label + " 완료!  만족도 " + satGrade + "   +" + gained + "점  XP +" + xpGain + (assignBonus > 0 ? "  (맡은 일 +5)" : "") + (helpBonus > 0 ? "  (동료 대신 +10)" : "") + (waitDelta > 0 ? "  (빨라요 +" + waitDelta + ")" : (waitDelta < 0 ? "  (오래 기다렸어요 " + waitDelta + ")" : "")) + (closeDelta > 0 ? "  ♥친분 +" + closeDelta : (closeDelta < 0 ? "  ♥친분 " + closeDelta : "")), sat >= 30);
             }
             RemoveRequest(r);
             RefreshTop();
@@ -2641,9 +2651,14 @@ namespace SalonIntern
             topText.rectTransform.offsetMax = new Vector2(-520f, 0f);
 
             // 설정 버튼 (정식 모드에서는 오른쪽 끝, 테스트 모드에서는 테스트 버튼 왼쪽)
-            Button settingsButton = UiFactory.MakeButton("SettingsButton", top.transform, "설정", 28, new Color(0.40f, 0.45f, 0.55f), OpenSettings);
+            Button settingsButton = UiFactory.MakeButton("SettingsButton", top.transform, "메뉴", 28, new Color(0.40f, 0.45f, 0.55f), OpenSettings);
             if (LevelConfig.TestMode) UiFactory.Stretch(settingsButton.GetComponent<RectTransform>(), 0.64f, 0.15f, 0.74f, 0.85f);
             else UiFactory.Stretch(settingsButton.GetComponent<RectTransform>(), 0.87f, 0.15f, 0.99f, 0.85f);
+
+            // 예약표 다시 보기 (영업 중에만 열림)
+            Button resView = UiFactory.MakeButton("ReservationViewButton", top.transform, "예약표", 28, new Color(0.35f, 0.50f, 0.65f), OpenReservationView);
+            if (!LevelConfig.TestMode) UiFactory.Stretch(resView.GetComponent<RectTransform>(), 0.74f, 0.15f, 0.86f, 0.85f);
+            else UiFactory.Stretch(resView.GetComponent<RectTransform>(), 0.52f, 0.15f, 0.63f, 0.85f);
 
             // 테스트용 버튼: 하루 끝내기, 레벨 조절 (TestMode일 때만 보임)
             Button skip = UiFactory.MakeButton("SkipDay", top.transform, "하루 끝", 28, new Color(0.65f, 0.40f, 0.30f), SkipToEvening);
@@ -2661,7 +2676,9 @@ namespace SalonIntern
             floorImage = floor;
             Art.Apply(floor, "floor_tile", 0f, true);
             mapArea = floor.rectTransform;
-            UiFactory.Stretch(mapArea, 0.03f, 0.22f, 0.97f, 0.89f);
+            // 하단 피로도 막대·휴식·재료실 버튼을 없애 화면을 넓힘: 휴게실·재료실은 방을 직접 누르고, 피로도는 왼쪽 위 스태미너 표시(나)에서 본다
+            UiFactory.Stretch(mapArea, 0.0f, 0.125f, 1.0f, 0.895f);
+            mapArea.localScale = new Vector3(1.05f, 1.05f, 1f);
             BuildFloor();
 
             // 알림 띠 (평소엔 숨김)
@@ -2683,6 +2700,9 @@ namespace SalonIntern
             supplyButton = UiFactory.MakeButton("SupplyButton", root, "재료실 가기", 30, new Color(0.45f, 0.60f, 0.45f), StartSupply);
             UiFactory.Stretch(supplyButton.GetComponent<RectTransform>(), 0.71f, 0.135f, 0.97f, 0.205f);
             supplyButtonText = supplyButton.GetComponentInChildren<Text>();
+            fBg.gameObject.SetActive(false);        // 화면 확대를 위해 숨김 (코드는 그대로 두어 오류가 나지 않게 함)
+            restButton.gameObject.SetActive(false);
+            supplyButton.gameObject.SetActive(false);
 
             // 하단 안내 문구
             Image bottom = UiFactory.Panel("BottomBar", root, new Color(0.20f, 0.20f, 0.26f));
@@ -2697,22 +2717,12 @@ namespace SalonIntern
             BuildDayPanel(root, "EveningPanel", "다음 날 시작", NextDay,
                 out eveningPanel, out eveningTitle, out eveningBody);
 
-            Button resetButton = UiFactory.MakeButton("ResetButton", morningPanel, "처음부터 다시", 22, new Color(0.55f, 0.35f, 0.35f), OnResetPressed);
-            UiFactory.Stretch(resetButton.GetComponent<RectTransform>(), 0.80f, 0.945f, 0.98f, 0.99f);
-            resetButtonText = resetButton.GetComponentInChildren<Text>();
+            // 상점·업적·시작 화면·처음부터 다시는 메뉴(설정) 창 안에 있다
+            Button soundButton = UiFactory.MakeButton("SoundButton", morningPanel, "메뉴", 24, new Color(0.40f, 0.50f, 0.45f), OpenSettings);
+            UiFactory.Stretch(soundButton.GetComponent<RectTransform>(), 0.86f, 0.945f, 0.98f, 0.99f);
 
-            Button toTitle = UiFactory.MakeButton("TitleButton", morningPanel, "시작 화면", 22, new Color(0.40f, 0.45f, 0.55f), ShowTitle);
-            UiFactory.Stretch(toTitle.GetComponent<RectTransform>(), 0.62f, 0.945f, 0.78f, 0.99f);
-
-            Button shopButton = UiFactory.MakeButton("ShopButton", morningPanel, "상점", 24, new Color(0.35f, 0.50f, 0.65f), OpenShop);
-            UiFactory.Stretch(shopButton.GetComponent<RectTransform>(), 0.02f, 0.945f, 0.20f, 0.99f);
-            shopButtonText = shopButton.GetComponentInChildren<Text>();
-
-            Button soundButton = UiFactory.MakeButton("SoundButton", morningPanel, "설정", 24, new Color(0.40f, 0.50f, 0.45f), OpenSettings);
-            UiFactory.Stretch(soundButton.GetComponent<RectTransform>(), 0.40f, 0.945f, 0.60f, 0.99f);
-
-            Button achButton = UiFactory.MakeButton("AchButton", morningPanel, "업적", 24, new Color(0.60f, 0.50f, 0.30f), OpenAchievements);
-            UiFactory.Stretch(achButton.GetComponent<RectTransform>(), 0.22f, 0.945f, 0.38f, 0.99f);
+            Button eveMenu = UiFactory.MakeButton("EveningMenuButton", eveningPanel, "메뉴", 24, new Color(0.40f, 0.50f, 0.45f), OpenSettings);
+            UiFactory.Stretch(eveMenu.GetComponent<RectTransform>(), 0.86f, 0.945f, 0.98f, 0.99f);
 
             saveText = UiFactory.Label("SaveText", canvasRoot, "저장 중...", 22, new Color(1f, 1f, 1f, 0.95f), TextAnchor.MiddleRight);
             saveText.raycastTarget = false;

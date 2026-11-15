@@ -49,6 +49,10 @@ namespace SalonIntern
         Button bottleButton;
         Image faucetGlow;
         Image bottleGlow;
+        Image[] bubbles;   // 머리 위 거품 방울 (칸마다 2개). 거품내기에서 늘고 헹구기에서 사라진다
+        struct Drop { public Image img; public float life; }
+        readonly System.Collections.Generic.List<Drop> drops = new System.Collections.Generic.List<Drop>();
+        float dropTimer;
 
         protected override void Setup()
         {
@@ -91,6 +95,19 @@ namespace SalonIntern
             hairImage = Dot(pad.transform, HairCenter, HairRadius * 2f, From[0], "hair_head");
             hairImage.raycastTarget = false;
 
+            // 거품 방울: 칸마다 큰 방울 하나와 작은 방울 하나
+            bubbles = new Image[centers.Length * 2];
+            for (int i = 0; i < centers.Length; i++)
+            {
+                Vector2 off = new Vector2(Mathf.Sin(i * 12.9898f) * 16f, Mathf.Cos(i * 78.233f) * 16f);
+                bubbles[2 * i] = Dot(pad.transform, centers[i] + off, 66f + (i % 3) * 8f, new Color(1f, 1f, 1f, 0f));
+                bubbles[2 * i + 1] = Dot(pad.transform, centers[i] - off * 1.4f, 42f + (i % 2) * 10f, new Color(0.88f, 0.95f, 1f, 0f));
+                bubbles[2 * i].raycastTarget = false;
+                bubbles[2 * i + 1].raycastTarget = false;
+            }
+            RefreshBubbles();
+            dropPad = pad.transform;
+
             // 옆에 놓인 수도꼭지(왼쪽)와 샴푸통(오른쪽): 필요할 때 눌러서 쓴다
             faucetButton = MakeTool("수도꼭지", new Vector2(-590f, 30f), new Color(0.78f, 0.88f, 0.95f), () => PressTool(0), out faucetGlow);
             if (Art.Get("prop_faucet") != null) Dot(faucetButton.transform, new Vector2(0f, 45f), 200f, Color.white, "prop_faucet");
@@ -113,6 +130,48 @@ namespace SalonIntern
             }
 
             StartStage(0);
+        }
+
+        Transform dropPad;
+
+        // 단계에 맞게 거품 방울의 진하기를 맞춘다: 거품내기는 문지른 곳부터 생기고, 헹구기는 문지른 곳부터 사라진다
+        void RefreshBubbles()
+        {
+            if (bubbles == null) return;
+            for (int i = 0; i < centers.Length; i++)
+            {
+                float a = 0f;
+                if (stage == 3) a = amount[i];
+                else if (stage == 4) a = 1f;
+                else if (stage == 5) a = 1f - amount[i];
+                a = Mathf.Clamp01(a) * 0.95f;
+                for (int k = 0; k < 2; k++)
+                {
+                    Color c = bubbles[2 * i + k].color; c.a = a; bubbles[2 * i + k].color = c;
+                }
+            }
+        }
+
+        // 적시기·헹구기 중에는 문지르는 자리에서 물방울이 떨어진다
+        void SpawnDrop(Vector2 p)
+        {
+            Image d = Dot(dropPad, p + new Vector2(Random.Range(-30f, 30f), Random.Range(-10f, 25f)), Random.Range(10f, 20f), new Color(0.45f, 0.72f, 0.98f, 0.9f));
+            d.raycastTarget = false;
+            drops.Add(new Drop { img = d, life = 0.55f });
+        }
+
+        void TickDrops()
+        {
+            for (int i = drops.Count - 1; i >= 0; i--)
+            {
+                Drop d = drops[i];
+                d.life -= Time.deltaTime;
+                if (d.life <= 0f || d.img == null) { if (d.img != null) Destroy(d.img.gameObject); drops.RemoveAt(i); continue; }
+                RectTransform rt = d.img.rectTransform;
+                rt.anchoredPosition += new Vector2(0f, -230f * Time.deltaTime);
+                Color c = d.img.color; c.a = Mathf.Clamp01(d.life / 0.55f) * 0.9f; d.img.color = c;
+                drops[i] = d;
+            }
         }
 
         bool IsAction { get { return stage % 2 == 0; } }
@@ -159,6 +218,7 @@ namespace SalonIntern
             feedbackText.text = StageTips[s];
             // 문지르는 단계: 적시기·헹구기는 샤워기 호스, 거품내기는 거품. 준비 단계는 원래 커서
             SetCursor(action ? CursorKind.None : (s == 3 ? CursorKind.Foam : CursorKind.Shower));
+            RefreshBubbles();
             UpdateInfo();
         }
 
@@ -181,6 +241,9 @@ namespace SalonIntern
                 amount[i] = Mathf.Min(1f, amount[i] + dist / 260f);
             }
             hairImage.color = Color.Lerp(From[si], To[si], Mathf.Clamp01(Coverage() / need));
+            RefreshBubbles();
+            dropTimer -= Time.deltaTime;
+            if (dist > 1f && dropTimer <= 0f && (si == 0 || si == 2)) { SpawnDrop(p); dropTimer = 0.05f; }
 
             if (Coverage() >= need)
             {
@@ -223,6 +286,7 @@ namespace SalonIntern
         protected override void Tick()
         {
             timeLeft -= Time.deltaTime;
+            TickDrops();
             UpdateInfo();
             if (timeLeft <= 0f) Finish(false);
         }
