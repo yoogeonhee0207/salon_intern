@@ -24,6 +24,8 @@ namespace SalonIntern
             public int routeIdx;     // 지금 진행 중인 단계 번호
             public int chair = -1; // 앉아 있는 시술석 의자 번호
             public int bed = -1;   // 누워 있는 샴푸대 번호
+            public bool delegated; // 내가 아닌 인턴에게 이번 쉬운 단계를 맡긴 상태
+            public GameObject messVisual; // 바닥 청소: 바닥에 흩어진 머리카락 표시
             public bool processing;  // 약이 작용하는 대기 중 (손님은 의자에 앉아 있음)
             public bool ready;       // 대기가 끝나서 손님을 모시러 갈 수 있음
             public bool pickup;      // 의자로 손님을 모시러 가는 중
@@ -82,8 +84,8 @@ namespace SalonIntern
         bool carrying;
         bool customerReturning;
         Vector2 customerReturnTo;
-        static readonly Vector2 RestPos = new Vector2(-790f, 110f);
-        static readonly Vector2 SupplyPos = new Vector2(-790f, -110f);
+        static readonly Vector2 RestPos = new Vector2(-790f, 70f);
+        static readonly Vector2 SupplyPos = new Vector2(-790f, -150f);
         bool minigameActive; // 미니게임 중에는 시계와 요청 시간이 멈춘다 (임시 규칙)
         Text topText;
         Text logText;
@@ -219,6 +221,7 @@ namespace SalonIntern
             UpdateBeds();
             UpdateCutWait();
             UpdateNpcs();
+            UpdateStaminaPanel();
 
             // 영업 시계 흐르기
             float dt = Time.deltaTime;
@@ -404,6 +407,13 @@ namespace SalonIntern
                 int penalty = shortage * LevelConfig.ShortPenalty[dayStartLevel];
                 score -= penalty;
                 penaltyLine = "최소 건수 미달  " + shortage + "건 부족  -" + penalty + "점\n";
+            }
+            int overHelp = dayDesignerHelps - DesignerHelpLimit;
+            if (overHelp > 0 && !TourDay)
+            {
+                int hp = overHelp * DesignerHelpPenalty;
+                score -= hp;
+                penaltyLine += "선생님께 맡긴 횟수 초과  " + overHelp + "회  -" + hp + "점\n";
             }
             int dayScore = score - dayStartScore;
             int dayDone = done - dayStartDone;
@@ -915,6 +925,34 @@ namespace SalonIntern
                     });
                 }
             }
+        }
+
+        // 선생님 고르기 도우미: 가능한 최대 인원(PickMax)까지만 고른다
+        void PickRandom()
+        {
+            picked.Clear();
+            var pool = new List<DesignerData>(designers);
+            while (picked.Count < PickMax && pool.Count > 0)
+            {
+                int k = Random.Range(0, pool.Count);
+                picked.Add(pool[k]);
+                pool.RemoveAt(k);
+            }
+            DrawReservationGrid();
+        }
+
+        void PickAll()
+        {
+            picked.Clear();
+            foreach (DesignerData d in designers) { if (picked.Count >= PickMax) break; picked.Add(d); }
+            if (picked.Count < designers.Length) Say("오늘은 선생님을 최대 " + PickMax + "명까지 고를 수 있어요.");
+            DrawReservationGrid();
+        }
+
+        void PickNone()
+        {
+            picked.Clear();
+            DrawReservationGrid();
         }
 
         void TogglePicked(int row)
@@ -1570,7 +1608,33 @@ namespace SalonIntern
             m.remaining = m.timeLimit;
             CreateCard(m);
             active.Add(m);
-            Say("커트 손님이 가고 나서 바닥에 머리카락이 가득해요! 쓸어주세요.");
+            m.messVisual = BuildMessVisual(m.anchor);
+            Say(at.name + " 선생님 자리 앞 바닥에 머리카락이 가득해요! 말풍선을 눌러 쓸어주세요.");
+        }
+
+        // 바닥에 흩어진 머리카락 표시: 노란 동그라미(여기!) 위에 어두운 머리카락 점들
+        GameObject BuildMessVisual(Vector2 pos)
+        {
+            Image ring = UiFactory.Circle("MessVisual", mapArea, new Color(1f, 0.92f, 0.45f, 0.55f));
+            ring.raycastTarget = false;
+            PlaceCenter(ring.rectTransform, pos, new Vector2(150f, 150f));
+            ring.rectTransform.SetSiblingIndex(Mathf.Min(ring.rectTransform.GetSiblingIndex(), 3)); // 사람과 말풍선 뒤에 깔리게
+            var rng = new System.Random(Mathf.RoundToInt(pos.x * 7f + pos.y));
+            for (int i = 0; i < 12; i++)
+            {
+                float a = (float)(rng.NextDouble() * Mathf.PI * 2f);
+                float r = (float)rng.NextDouble() * 58f;
+                float sz = 10f + (float)rng.NextDouble() * 14f;
+                Image h = UiFactory.Circle("Hair", ring.transform, new Color(0.22f, 0.15f, 0.12f, 0.95f));
+                h.raycastTarget = false;
+                RectTransform rt = h.rectTransform;
+                rt.anchorMin = rt.anchorMax = new Vector2(0.5f, 0.5f);
+                rt.pivot = new Vector2(0.5f, 0.5f);
+                rt.anchoredPosition = new Vector2(Mathf.Cos(a) * r, Mathf.Sin(a) * r);
+                rt.sizeDelta = new Vector2(sz, sz * 0.45f);
+                rt.localRotation = Quaternion.Euler(0f, 0f, (float)(rng.NextDouble() * 180f));
+            }
+            return ring.gameObject;
         }
 
         Vector2 MessPos(DesignerData d)
@@ -1621,15 +1685,20 @@ namespace SalonIntern
                 Toast("동료 인턴이 맡은 선생님이에요. 인턴이 휴게 갈 때는 도와줄 수 있어요", false);
                 return;
             }
+            if (r.delegated)
+            {
+                Toast(Ga(WorkerName(r.assignee)) + " 하고 있어요. 끝나면 모시러 가요", false);
+                return;
+            }
             if (!TryReclaimFromNpc(r)) return;
             if (r.processing)
             {
                 Toast("⏱ " + StepNames[r.route[r.routeIdx - 1]] + " 약이 작용하는 중이에요. 다른 일을 먼저 해요", true);
                 return;
             }
-            if (!r.isMess && r.route != null && r.chair < 0 && !(carrying && playerTask == r) && StepStation[r.route[0]] == 1 && FreeChairs() == 0)
+            if (!r.isMess && r.route != null && r.chair < 0 && !(carrying && playerTask == r) && ((StepStation[r.route[0]] == 1 && FreeChairs() == 0) || (StepStation[r.route[0]] == 0 && FreeBeds() == 0)))
             {
-                Toast("시술석 의자가 모두 차 있어요! 다른 요청을 먼저 해요", false);
+                Toast(FullMessage(r, 0, false), false);
                 return;
             }
 
@@ -1649,7 +1718,7 @@ namespace SalonIntern
             {
                 // 이미 손님을 데리고 있으면 바로 구역으로
                 chairWaiter = null;
-                if (!ReserveFor(r, r.routeIdx)) { chairWaiter = r; Toast("시술석 의자가 모두 차 있어요! 자리가 날 때까지 기다려요", false); return; }
+                if (!ReserveFor(r, r.routeIdx)) { chairWaiter = r; Toast(FullMessage(r, r.routeIdx, true), false); return; }
                 playerTarget = StepPos(r, r.routeIdx);
                 playerWalking = true;
                 return;
@@ -1659,7 +1728,7 @@ namespace SalonIntern
                 // 대기가 끝났으니 의자에 앉은 손님을 모시러 간다
                 playerTask = r;
                 r.pickup = true;
-                playerTarget = r.chair >= 0 ? ChairStandPos(r.chair) : new Vector2(SeatPos(r.designer).x, SeatPos(r.designer).y > 0f ? 55f : -55f);
+                playerTarget = r.chair >= 0 ? ChairStandPos(r.chair) : (r.bed >= 0 ? WashStandPos(r.bed) : new Vector2(SeatPos(r.designer).x, SeatPos(r.designer).y > 0f ? 55f : -55f));
                 playerWalking = true;
                 Say("손님을 모시러 가요");
                 return;
@@ -1706,8 +1775,9 @@ namespace SalonIntern
                 }
                 if (!task.started)
                 {
-                    task.started = true;
                     task.routeIdx = 0;
+                    if (TryDelegateStep(task, true)) return; // 첫 단계가 쉬운 단계면 인턴이 먼저 한다
+                    task.started = true;
                     if (StepStation[task.route[0]] >= 0)
                     {
                         // 디자이너 자리에서 손님을 모시고 첫 단계 구역으로 출발
@@ -1715,7 +1785,7 @@ namespace SalonIntern
                         {
                             task.started = false;
                             playerTask = null;
-                            Toast("시술석 의자가 모두 차 있어요! 다른 요청을 먼저 해요", false);
+                            Toast(FullMessage(task, 0, false), false);
                             return;
                         }
                         PickUpCustomer();
@@ -1761,7 +1831,7 @@ namespace SalonIntern
         {
             int st = StepStation[r.route[idx]];
             if (st == 1 && r.chair >= 0) return ChairStandPos(r.chair);
-            if (st == 0) { AssignBed(r); return WashStandPos(Mathf.Max(0, r.bed)); }
+            if (st == 0) return WashStandPos(Mathf.Max(0, r.bed));
             if (st >= 0) return StationPos[st];
             Vector2 seat = SeatPos(r.designer);
             return new Vector2(seat.x, seat.y > 0f ? 55f : -55f);
@@ -1785,15 +1855,36 @@ namespace SalonIntern
                     CompleteStep(task, r.hits);
                 };
                 // 샴푸(적시기, 샴푸, 헹구기)와 펌(빗질, 파지, 롯드, 고무줄)은 전용 미니게임
-                if (step == 0) { ShampooExam.Lite = true; ExamBase.Show<ShampooExam>(canvasRoot, done); }
-                else if (step == 1) { PermExam.Lite = true; ExamBase.Show<PermExam>(canvasRoot, done); }
-                else { StepGame.Step = step; ExamBase.Show<StepGame>(canvasRoot, done); }
+                ExamBase exam;
+                if (step == 0) { ShampooExam.Lite = true; exam = ExamBase.Show<ShampooExam>(canvasRoot, done); }
+                else if (step == 1) { PermExam.Lite = true; exam = ExamBase.Show<PermExam>(canvasRoot, done); }
+                else { StepGame.Step = step; exam = ExamBase.Show<StepGame>(canvasRoot, done); }
+                AddDesignerHelpButton(exam, task, step);
                 return;
             }
             waitingAtStation = true;
-            stationWait = 4f;
-            Say(task.designer.name + " 선생님이 " + StepNames[step] + "하는 중...");
+            // 내가 아직 못 하는 단계는 그 단계를 할 수 있는 인턴(나보다 높은 인턴) 중 쉬지 않는 가장 실력 좋은 인턴이 대신 해준다
+            Npc helper = null;
+            foreach (Npc n in npcs)
+            {
+                if (n.level < StepUnlock[step] || n.resting) continue;
+                if (helper == null || n.level > helper.level) helper = n;
+            }
+            if (helper != null)
+            {
+                stationWait = 4f * helper.workMult;
+                stationDonePct = helper.sat;
+                Say(Ga(helper.role) + " " + Reul(StepNames[step]) + " 대신 해줘요...");
+            }
+            else
+            {
+                stationWait = 4f;
+                stationDonePct = 70;
+                Say(task.designer.name + " 선생님이 " + StepNames[step] + "하는 중...");
+            }
         }
+
+        int stationDonePct = 70;
 
         void ConsumeStep(int step)
         {
@@ -1827,7 +1918,7 @@ namespace SalonIntern
             Request task = playerTask;
             if (task == null || !active.Contains(task)) return;
 
-            CompleteStep(task, 70); // 선생님이 한 단계는 보통 솜씨
+            CompleteStep(task, stationDonePct); // 대신 해준 인턴(또는 선생님)의 솜씨
         }
 
         // 한 단계를 끝냈을 때: 완성도를 기록하고 다음 단계로 (마지막이면 시술 완료)
@@ -1854,15 +1945,48 @@ namespace SalonIntern
                 return;
             }
             if (StepStation[step] == 1) ReleaseChair(task);
+            if (TryDelegateStep(task, false)) return;
             if (!ReserveFor(task, task.routeIdx))
             {
                 chairWaiter = task;
-                Toast("시술석 의자가 모두 차 있어요! 자리가 날 때까지 기다려요", false);
+                Toast(FullMessage(task, task.routeIdx, true), false);
                 return;
             }
             playerTarget = StepPos(task, task.routeIdx);
             playerWalking = true;
             Say(StepNames[step] + " 끝! 다음은 " + StepNames[task.route[task.routeIdx]]);
+        }
+
+        // 내 레벨보다 한참 쉬운 단계(그 단계를 연 레벨보다 2레벨 이상 높음)는 한가한 인턴에게 맡길 수 있다
+        bool IsEasyStep(int step) { return step != 4 && level >= StepUnlock[step] + 2; }
+
+        // 이번 단계가 쉬운 단계이고 일을 맡을 수 있는 인턴이 있으면 그 인턴에게 넘긴다 (내가 손님을 데려가지 않는다)
+        bool TryDelegateStep(Request task, bool firstStep)
+        {
+            if (task.route == null || task.route.Length < 2 || task.routeIdx >= task.route.Length) return false;
+            int step = task.route[task.routeIdx];
+            if (!IsEasyStep(step)) return false;
+            Npc helper = null;
+            foreach (Npc n in npcs)
+            {
+                if (n.task != null || n.resting || n.refillKind >= 0 || n.level < StepUnlock[step]) continue;
+                if (helper == null || n.level > helper.level) helper = n;
+            }
+            if (helper == null) return false;
+
+            // 손님을 내려놓고(디자이너 자리로 돌려보냄) 인턴이 이번 단계를 맡는다
+            if (carrying) SendCustomerBack(SeatPos(task.designer));
+            playerTask = null;
+            playerWalking = false;
+            task.started = false;
+            task.pickup = false;
+            task.delegated = true;
+            SetAssignee(task, helper.id);
+            helper.task = task;
+            task.npcActive = true;
+            NpcStart(helper);
+            Say(Ga(helper.role) + " " + Reul(StepNames[step]) + " 맡아줘요. 끝나면 모시러 가요");
+            return true;
         }
 
         static int StationFor(int procedure)
@@ -2031,7 +2155,7 @@ namespace SalonIntern
                     string where = StepStation[step] >= 0 ? StationNames[StepStation[step]] : "디자이너 자리";
                     string mine = level >= StepUnlock[step]
                         ? "지금 레벨에서 직접 할 수 있어요."
-                        : "Lv." + StepUnlock[step] + "부터 직접 할 수 있어요. 그전엔 디자이너가 해요.";
+                        : "Lv." + StepUnlock[step] + "부터 직접 할 수 있어요. 그전엔 나보다 높은 인턴이 대신 해줘요.";
                     string uses = "";
                     foreach (int k in StepUses[step]) uses += (uses.Length > 0 ? ", " : "") + StockNames[k];
                     pages.Add((i + 1) + " / " + route.Length + "  " + StepNames[step] + "\n\n"
@@ -2184,6 +2308,7 @@ namespace SalonIntern
             }
             ReleaseChair(r);
             DestroySeated(r);
+            if (r.messVisual != null) Destroy(r.messVisual);
             if (chairWaiter == r) chairWaiter = null;
             active.Remove(r);
             Destroy(r.background.gameObject);
@@ -2540,7 +2665,16 @@ namespace SalonIntern
             morningBody.alignment = TextAnchor.MiddleCenter;
 
             reservationArea = UiFactory.Rect("ReservationGrid", morningPanel);
-            UiFactory.Stretch(reservationArea, 0.04f, 0.19f, 0.96f, 0.79f);
+            UiFactory.Stretch(reservationArea, 0.04f, 0.19f, 0.96f, 0.76f);
+
+            string[] pickNames = { "랜덤 선택", "전체 선택", "선택 해제" };
+            System.Action[] pickActions = { PickRandom, PickAll, PickNone };
+            for (int i = 0; i < 3; i++)
+            {
+                Button pb = UiFactory.MakeButton("Pick" + i, morningPanel, pickNames[i], 22, i == 0 ? new Color(0.35f, 0.55f, 0.45f) : new Color(0.40f, 0.45f, 0.55f), pickActions[i]);
+                float x0 = 0.04f + i * 0.14f;
+                UiFactory.Stretch(pb.GetComponent<RectTransform>(), x0, 0.768f, x0 + 0.13f, 0.80f);
+            }
 
             morningNote = UiFactory.Label("Note", morningPanel,
                 "※ 오늘 같이 일할 선생님을 최대 3명 골라요.\n고른 선생님의 일은 내가 맡고, 나머지 선생님은 동료 인턴이 맡아요. (VIP는 보너스)", 24, TextDark, TextAnchor.MiddleLeft);
@@ -2659,6 +2793,8 @@ namespace SalonIntern
             supplyRoomText.rectTransform.offsetMin = new Vector2(0f, 6f);
             supplyRoomText.rectTransform.offsetMax = new Vector2(0f, -40f);
 
+            BuildStaminaPanel();
+
             // 시술 구역 (오른쪽): 샴푸실 / 시술석 (커트와 드라이는 선생님 자리)
             string[] zoneNames = { "샴푸실", "시술석" };
             Color[] zoneColors =
@@ -2677,13 +2813,13 @@ namespace SalonIntern
             BuildWashBeds();
             BuildChairs();
 
-            // 디자이너 자리: 위 6명, 아래 6명
+            // 디자이너 자리: 위 5명, 아래 5명
             for (int i = 0; i < designers.Length; i++)
             {
-                int row = (i / 4) % 2;
-                int col = i % 4;
+                int row = (i / 5) % 2;
+                int col = i % 5;
                 float sy = row == 0 ? 200f : -200f;
-                Vector2 pos = new Vector2(-400f + col * 240f, sy);
+                Vector2 pos = new Vector2(-410f + col * 190f, sy);
                 seats[designers[i]] = pos;
 
                 // 거울 (벽쪽) + 손님 의자 + 의자에 앉은 손님, 디자이너는 의자 옆에 선다

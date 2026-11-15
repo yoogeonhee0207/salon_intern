@@ -103,6 +103,32 @@
       "speed": 1.3,
       "patience": "매우 높음",
       "patienceMultiplier": 1.5
+    },
+    {
+      "id": 8,
+      "name": "한도윤",
+      "specialty": "매직/스트레이트",
+      "chores": 15,
+      "shampoo": 15,
+      "roll": 30,
+      "dye": 10,
+      "dry": 30,
+      "speed": 1.4,
+      "patience": "높음",
+      "patienceMultiplier": 1.25
+    },
+    {
+      "id": 12,
+      "name": "강유나",
+      "specialty": "컬러+펌 복합",
+      "chores": 10,
+      "shampoo": 10,
+      "roll": 30,
+      "dye": 35,
+      "dry": 15,
+      "speed": 1.4,
+      "patience": "보통",
+      "patienceMultiplier": 1.0
     }
   ]
 }

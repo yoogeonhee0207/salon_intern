@@ -29,6 +29,8 @@ namespace SalonIntern
             public bool resting;
             public int refillKind = -1;    // 재료를 채우러 가는 중이면 재료 번호
             public int level;              // 동료 인턴의 레벨 (내 레벨에 따라 바뀐다)
+            public float stamina = 100f;   // 스태미너: 일하면 줄고 휴게 중에는 찬다. 낮을수록 작업이 느려진다
+            public bool forceRest;         // 내가 휴식을 보냈거나 스태미너가 0이 되어 쉬는 중 (가득 찰 때까지)
         }
 
         readonly List<Npc> npcs = new List<Npc>();
@@ -77,7 +79,7 @@ namespace SalonIntern
             int[] sat = { 88, 75, 58 };
             Vector2[] homes = { new Vector2(320f, 0f), new Vector2(450f, 0f), new Vector2(580f, 0f) };
 
-            for (int i = 0; i < 3; i++)
+            for (int i = 0; i < 3; i++) // 같이 일하는 인턴 3명
             {
                 Image me = Art.Figure("Npc_" + names[i], mapArea, uniformColor, "intern");
                 me.raycastTarget = false;
@@ -123,16 +125,32 @@ namespace SalonIntern
                 npcs[i].workMult = 0.7f + 0.15f * (6 - lv[i]); // 레벨이 높을수록 빠르다 (Lv.6 0.7배 ~ Lv.3 1.15배)
                 npcs[i].sat = 55 + 6 * lv[i];
             }
+            // Lv.5부터는 내가 인턴장: 선배 인턴장이 졸업하고 그 자리에 새 막내가 들어온다
+            if (npcs.Count > 0)
+            {
+                bool newbie = level >= 5;
+                npcs[0].role = newbie ? "윤새봄" : "인턴장";
+                npcs[0].name = newbie ? "윤새봄" : "정하윤";
+            }
         }
 
         // 아침 화면용: 오늘 같이 일하는 인턴들의 레벨
         string NpcRosterText()
         {
-            string[] roles = { "인턴장", "오지후", "김나래" }; // 인턴장 말고는 이름으로 부른다
+            string[] roles = { level >= 5 ? "윤새봄" : "인턴장", "오지후", "김나래" }; // 인턴장 말고는 이름으로 부른다 (Lv.5부터는 내가 인턴장, 새 막내가 들어옴)
             int[] lv = LevelConfig.NpcLevels[Mathf.Clamp(level, 0, LevelConfig.NpcLevels.Length - 1)];
             string t = "";
             for (int i = 0; i < roles.Length && i < lv.Length; i++) t += (i > 0 ? "  ·  " : "") + roles[i] + " Lv." + lv[i];
             return t;
+        }
+
+        // 인턴이 먼저 맡을 일의 순서: 내가 아직 못 하는 단계 수(x1000) + 시술 점수. 클수록 어려운 시술
+        int HardScore(Request r)
+        {
+            if (r.route == null) return 0;
+            int hard = 0;
+            foreach (int step in r.route) if (level < StepUnlock[step]) hard++;
+            return hard * 1000 + StepScore(r);
         }
 
         string NpcTitle(Npc n) { return n.role + " Lv." + n.level; }
@@ -236,7 +254,7 @@ namespace SalonIntern
             foreach (Npc n in npcs)
             {
                 if (n.rt == null) continue;
-                n.task = null; n.state = 0; n.resting = false; n.refillKind = -1;
+                n.task = null; n.state = 0; n.resting = false; n.refillKind = -1; n.stamina = 100f; n.forceRest = false;
                 n.rt.anchoredPosition = n.home;
                 PlaceNpcLabel(n);
             }
@@ -254,18 +272,21 @@ namespace SalonIntern
             return new Vector2(seat.x + 62f, seat.y > 0f ? 55f : -55f);
         }
 
+        // 스태미너가 낮을수록 작업이 느려진다 (100이면 1배, 0이면 1.8배)
+        static float StaminaSlow(Npc n) { return 1f + 1.2f * (1f - Mathf.Clamp01(n.stamina / 100f)); }
+
         float NpcWorkTime(Npc n, Request r)
         {
-            if (r.isMess) return 5f * n.workMult;
+            if (r.isMess) return 5f * n.workMult * StaminaSlow(n);
             int len = r.route != null ? r.route.Length : 1;
-            return (4f + 3.5f * len) * n.workMult;
+            return (4f + 3.5f * len) * n.workMult * StaminaSlow(n);
         }
 
         // 아직 못 하는 단계(내 레벨 규칙과 같은 해금 레벨)는 선생님 도움을 받느라 두 배 걸린다
         float NpcStepTime(Npc n)
         {
             int step = n.task.route[n.task.routeIdx];
-            float t = 4f * n.workMult;
+            float t = 4f * n.workMult * StaminaSlow(n);
             if (n.level < StepUnlock[step]) t *= 2f;
             return t;
         }
@@ -282,7 +303,7 @@ namespace SalonIntern
         {
             int st = StepStation[r.route[idx]];
             if (st == 1 && r.chair >= 0) return ChairStandPos(r.chair);
-            if (st == 0) { AssignBed(r); return WashStandPos(Mathf.Max(0, r.bed)); }
+            if (st == 0) return WashStandPos(Mathf.Max(0, r.bed));
             if (st >= 0) return StationPos[st] + new Vector2(-80f, 0f);
             return NpcWorkSpot(n, r);
         }
@@ -325,10 +346,39 @@ namespace SalonIntern
             foreach (int k in StepUses[step]) if (stock[k] > 0) stock[k]--;
             if (step == 4) SpawnFloorMess(t.designer); // 커트 뒤에는 바닥에 머리카락이 남는다
             t.routeIdx++;
+            if (t.delegated)
+            {
+                // 내가 맡긴 쉬운 단계: 인턴의 솜씨가 만족도에 들어가고, 끝나면 내가 이어받는다
+                t.satSum += n.sat;
+                t.satCount++;
+                if (t.routeIdx >= t.route.Length)
+                {
+                    t.delegated = false;
+                    SetAssignee(t, 0);
+                    ReleaseNpc(n);
+                    ReleaseChair(t);
+                    PerformRequest(t);
+                    return;
+                }
+                if (StepWaitMin[step] <= 0)
+                {
+                    t.delegated = false;
+                    SetAssignee(t, 0);
+                    t.ready = true;
+                    t.readyAt = businessElapsed;
+                    t.multi = 0;
+                    t.bodyText.text = t.titleBase + "\n✔ " + StepNames[step] + " 끝!";
+                    t.background.color = new Color(0.78f, 0.93f, 0.78f);
+                    ReleaseNpc(n);
+                    Toast("✔ " + Ga(n.role) + " " + Reul(StepNames[step]) + " 끝냈어요. 모시러 가요", true);
+                    return;
+                }
+            }
             if (t.routeIdx >= t.route.Length) { NpcFinish(n, t); return; }
 
             if (StepWaitMin[step] > 0)
             {
+                if (t.delegated) { t.delegated = false; SetAssignee(t, 0); } // 대기가 끝나면 내가 모시러 간다
                 // 약이 작용하는 동안 손님은 앉아서 기다리고, 인턴은 다른 일을 하러 간다
                 t.processing = true;
                 t.ready = false;
@@ -385,13 +435,19 @@ namespace SalonIntern
 
                 if (n.task != null && (!active.Contains(n.task) || n.task.assignee != n.id)) ReleaseNpc(n);
 
-                bool brk = NpcOnBreak(n);
+                // 스태미너가 0이 되면 스스로 쉬러 가고, 가득 차면 돌아온다
+                if (n.stamina <= 15f) n.forceRest = true;   // 0이 되기 전에 미리 쉬러 간다
+                else if (n.forceRest && n.stamina >= 100f) n.forceRest = false;
+                bool brk = NpcOnBreak(n) || n.forceRest;
                 if (brk != n.resting)
                 {
                     n.resting = brk;
-                    if (brk) Toast("☕ " + Ga(n.role) + " 휴게실에 갔어요! 고르지 않은 선생님 일도 도와주면 추가 점수 +10", true);
+                    if (brk) Toast("☕ " + Ga(n.role) + " 휴게실에 가요! 쉬는 동안 고르지 않은 선생님 일도 도와주면 추가 점수 +10", true);
                     else Toast(Ga(n.role) + " 휴게를 마치고 돌아와요", false);
                 }
+                // 스태미너: 일하는 동안 줄고(재료 채우기 포함), 휴게 중에는 찬다
+                if (n.resting && n.task == null) n.stamina = Mathf.Min(100f, n.stamina + (100f / 30f) * dt);
+                else if (n.task != null || n.refillKind >= 0) n.stamina = Mathf.Max(3f, n.stamina - 0.62f * dt);   // 하던 일을 마치는 동안에도 0까지는 안 내려간다
 
                 if (n.task == null && !n.resting && n.refillKind < 0)
                 {
@@ -399,6 +455,7 @@ namespace SalonIntern
                     Request pick = null;
                     for (int pass = 0; pass < 2 && pick == null; pass++)   // 대기가 끝난 손님을 먼저, 그다음 새 일
                     {
+                        int bestHard = -1;
                         foreach (Request r in active)
                         {
                             bool mine = r.assignee == n.id || (r.assignee > 0 && npcs[r.assignee - 1].resting); // 쉬는 인턴의 일도 대신 맡는다
@@ -406,10 +463,10 @@ namespace SalonIntern
                             if (r.isLocked || r.processing || r.pickup || r.started) continue;
                             if (pass == 0 ? !r.ready : r.ready) continue;
                             if (NpcNeedsChairNow(r)) continue;
-                            pick = r;
-                            if (r.assignee != n.id) SetAssignee(r, n.id);
-                            break;
+                            int hard = HardScore(r); // 내가 못 하는 단계가 든 어려운 시술부터 맡는다
+                            if (hard > bestHard) { bestHard = hard; pick = r; }
                         }
+                        if (pick != null && pick.assignee != n.id) SetAssignee(pick, n.id);
                     }
                     if (pick == null)
                     {
@@ -423,16 +480,21 @@ namespace SalonIntern
                     }
                     if (pick == null && n.refillKind < 0)
                     {
+                        int bestHard = -1;
                         foreach (Request r in active)
                         {
                             if (r.npcOnly || r.assignee != 0 || r.isLocked || r.isMess) continue;
                             if (playerTask == r || r.npcBusy || r.npcActive || r.processing || r.ready || r.pickup || r.started || r.chair >= 0 || r.routeIdx != 0) continue;
-                            if (r.assignAge < HelpAfterSeconds) continue;
+                            int hard = HardScore(r);
+                            // 내가 못 하는 단계가 든 시술은 곧바로(2초), 나머지는 내가 시작 안 하면 8초 뒤 도와준다
+                            if (r.assignAge < (hard >= 1000 ? 2f : HelpAfterSeconds)) continue;
                             if (NpcNeedsChairNow(r)) continue;
-                            pick = r;
-                            SetAssignee(r, n.id);
-                            Toast(Ga(n.role) + " " + r.designer.name + " 선생님 " + Reul(r.label) + " 도와줘요", true);
-                            break;
+                            if (hard > bestHard) { bestHard = hard; pick = r; }
+                        }
+                        if (pick != null)
+                        {
+                            SetAssignee(pick, n.id);
+                            Toast(Ga(n.role) + " " + pick.designer.name + " 선생님 " + Reul(pick.label) + " 도와줘요", true);
                         }
                     }
                     if (pick != null)
@@ -498,7 +560,7 @@ namespace SalonIntern
                 {
                     // 시술석 의자가 날 때까지 기다린다 (너무 오래 걸리면 일을 내려놓고 다른 일을 찾는다)
                     n.rt.localRotation = Quaternion.identity;
-                    n.label.text = "의자 대기";
+                    n.label.text = StepStation[n.task.route[n.task.routeIdx]] == 0 ? "샴푸대 대기" : "의자 대기";
                     n.waitT += dt;
                     if (ReserveFor(n.task, n.task.routeIdx)) NpcBeginStep(n);
                     else if (n.waitT > 6f) ReleaseNpc(n);

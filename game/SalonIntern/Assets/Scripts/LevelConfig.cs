@@ -39,7 +39,7 @@ namespace SalonIntern
         public static readonly float[] FatigueScale = { 1.5f, 1.3f, 1.1f, 1.0f, 0.85f, 0.7f, 0.6f };
 
         // 요청 제한시간(초). 디자이너 참을성 배율이 곱해진다.
-        public static readonly float[] TimeLimit = { 40f, 35f, 30f, 25f, 20f, 20f, 20f };
+        public static readonly float[] TimeLimit = { 38f, 33f, 28f, 23f, 18f, 18f, 18f };
 
         // 요청 중 잡무 비율 (나머지는 시술 요청)
         public static readonly float[] ChoreRatio = { 0.45f, 0.40f, 0.33f, 0.27f, 0.22f, 0.20f, 0.20f };

@@ -413,11 +413,41 @@ namespace SalonIntern
         int dayRefills;      // 오늘 내가 직접 재료를 가득 채운 횟수
         const int GoalReward = 15;
 
+        // 선생님께 맡기기: 내가 할 수 있는 단계도 선생님께 넘길 수 있다. 하루 한도(레벨별)를 넘기면 정산에서 감점
+        int dayDesignerHelps;
+        static readonly int[] DesignerHelpMax = { 5, 4, 3, 3, 2, 2, 1 };
+        const int DesignerHelpPenalty = 10;
+        int DesignerHelpLimit { get { return DesignerHelpMax[Mathf.Clamp(level, 0, DesignerHelpMax.Length - 1)]; } }
+
+        void AddDesignerHelpButton(ExamBase game, Request task, int step)
+        {
+            if (TourDay || game == null) return;
+            int left = DesignerHelpLimit - dayDesignerHelps;
+            string label = left > 0 ? "선생님께 맡기기 (오늘 " + left + "회 남음)" : "선생님께 맡기기 (한도 초과 -" + DesignerHelpPenalty + "점)";
+            Button b = UiFactory.MakeButton("DesignerHelp", game.transform, label, 26, new Color(0.45f, 0.50f, 0.70f), () =>
+            {
+                if (task == null || playerTask != task || !active.Contains(task)) return;
+                Destroy(game.gameObject);
+                minigameActive = false;
+                dayDesignerHelps++;
+                waitingAtStation = true;
+                stationWait = 4f;
+                stationDonePct = 70;
+                Say(task.designer.name + " 선생님이 " + StepNames[step] + "하는 중... (오늘 " + dayDesignerHelps + "/" + DesignerHelpLimit + "회)");
+            });
+            RectTransform rt = b.GetComponent<RectTransform>();
+            rt.anchorMin = rt.anchorMax = new Vector2(0.5f, 0.5f);
+            rt.pivot = new Vector2(0.5f, 0.5f);
+            rt.anchoredPosition = new Vector2(640f, -440f);
+            rt.sizeDelta = new Vector2(520f, 80f);
+        }
+
         void RollDailyGoal()
         {
             dayGoodSat = 0;
             dayScolds = 0;
             dayRefills = 0;
+            dayDesignerHelps = 0;
             inspectorToday = false;
             if (TourDay) { goalType = -1; return; }
             goalType = Random.Range(0, 3);
@@ -523,6 +553,19 @@ namespace SalonIntern
         // 이 요청의 idx번째 단계가 시술석이면 의자를 잡는다. 시술석이 아니거나 이미 앉았으면 true
         bool ReserveFor(Request r, int idx)
         {
+            if (r.route != null && StepStation[r.route[idx]] == 0)
+            {
+                // 샴푸 단계는 샴푸대를 잡는다 (둘 다 차 있으면 자리가 날 때까지 기다린다)
+                if (r.bed >= 0) return true;
+                for (int i = 0; i < BedCount; i++)
+                {
+                    if (bedOwner[i] != null) continue;
+                    bedOwner[i] = r;
+                    r.bed = i;
+                    return true;
+                }
+                return false;
+            }
             if (r.route == null || StepStation[r.route[idx]] != 1) return true;
             if (r.chair >= 0) return true;
             for (int i = 0; i < ChairCount; i++)
@@ -572,6 +615,7 @@ namespace SalonIntern
                 if (Art.Apply(c, "seat_chair")) c.color = Color.white;
                 else Art.Apply(c, "ui_bubble", 20f);
                 PlaceCenter(c.rectTransform, ChairPos(i), new Vector2(80f, 80f));
+                c.rectTransform.localRotation = Quaternion.Euler(0f, 0f, 90f); // 등받이는 왼쪽, 테이블(오른쪽)을 보도록
                 c.raycastTarget = false;
                 chairImages[i] = c;
 
@@ -595,6 +639,92 @@ namespace SalonIntern
                 chairImages[i].color = !open ? new Color(0.80f, 0.80f, 0.82f)
                     : (hasArt ? (taken ? new Color(0.88f, 0.80f, 0.74f) : Color.white)
                               : (taken ? new Color(0.62f, 0.45f, 0.34f) : new Color(0.88f, 0.76f, 0.58f)));
+            }
+        }
+
+        // ---------- 왼쪽 위: 스태미너 표시 (나 + 같이 일하는 인턴) ----------
+
+        const int StaminaRows = 4;
+        readonly Text[] staNames = new Text[StaminaRows];
+        readonly Image[] staFills = new Image[StaminaRows];
+        readonly Text[] staValues = new Text[StaminaRows];
+        readonly Button[] staRestButtons = new Button[StaminaRows];
+
+        void BuildStaminaPanel()
+        {
+            Image panel = UiFactory.Panel("StaminaPanel", mapArea, new Color(1f, 1f, 1f, 0.55f));
+            panel.raycastTarget = false;
+            PlaceCenter(panel.rectTransform, new Vector2(-790f, 252f), new Vector2(196f, 150f));
+            Text title = UiFactory.Label("StaminaTitle", panel.transform, "스태미너", 20, TextDark, TextAnchor.UpperCenter);
+            title.raycastTarget = false;
+            title.rectTransform.offsetMax = new Vector2(0f, -4f);
+            for (int i = 0; i < StaminaRows; i++)
+            {
+                float y1 = 0.80f - i * 0.20f, y0 = y1 - 0.17f;
+                staNames[i] = UiFactory.Label("StaName" + i, panel.transform, "", 18, TextDark, TextAnchor.MiddleLeft);
+                staNames[i].raycastTarget = false;
+                staNames[i].horizontalOverflow = HorizontalWrapMode.Overflow;
+                UiFactory.Stretch(staNames[i].rectTransform, 0.04f, y0, 0.36f, y1);
+                Image bg = UiFactory.Panel("StaBar" + i, panel.transform, new Color(0.25f, 0.25f, 0.30f, 0.55f));
+                bg.raycastTarget = false;
+                UiFactory.Stretch(bg.rectTransform, 0.37f, y0 + 0.04f, 0.80f, y1 - 0.04f);
+                staFills[i] = UiFactory.Panel("StaFill", bg.transform, new Color(0.35f, 0.75f, 0.45f));
+                staFills[i].raycastTarget = false;
+                UiFactory.Stretch(staFills[i].rectTransform, 0f, 0f, 1f, 1f);
+                staValues[i] = UiFactory.Label("StaValue" + i, panel.transform, "", 18, TextDark, TextAnchor.MiddleRight);
+                staValues[i].raycastTarget = false;
+                UiFactory.Stretch(staValues[i].rectTransform, 0.80f, y0, 0.97f, y1);
+                if (i > 0)
+                {
+                    // 내가 인턴장일 때(Lv.5~) 인턴을 지금 쉬러 보낸다
+                    int idx = i - 1;
+                    Button rb = UiFactory.MakeButton("StaRest" + i, panel.transform, "휴식", 18, new Color(0.35f, 0.55f, 0.70f), () => SendInternToRest(idx));
+                    UiFactory.Stretch(rb.GetComponent<RectTransform>(), 1.03f, y0 + 0.01f, 1.42f, y1 - 0.01f);
+                    staRestButtons[i] = rb;
+                    rb.gameObject.SetActive(false);
+                }
+            }
+        }
+
+        // 인턴장(Lv.5~)인 내가 인턴을 쉬러 보낸다: 하던 일을 마치고 휴게실에서 스태미너가 찰 때까지 쉰다
+        void SendInternToRest(int npcIndex)
+        {
+            if (level < 5 || phase != Phase.Business || npcIndex < 0 || npcIndex >= npcs.Count) return;
+            Npc n = npcs[npcIndex];
+            if (n.resting || n.forceRest) return;
+            if (n.stamina > 50f) { Say(Ga(n.role) + " 아직 쌩쌩해요 (스태미너 50 이하일 때 쉬게 할 수 있어요)"); return; }
+            n.forceRest = true;
+            Say(Ga(n.role) + " 쉬러 가요 (스태미너가 찰 때까지)");
+        }
+
+        void UpdateStaminaPanel()
+        {
+            for (int i = 0; i < StaminaRows; i++)
+            {
+                if (staNames[i] == null) continue;
+                float v; string who;
+                if (i == 0) { v = 100f - fatigue; who = level >= 5 ? "나(인턴장)" : "나"; }
+                else if (i - 1 < npcs.Count) { v = npcs[i - 1].stamina; who = npcs[i - 1].role; }
+                else { staNames[i].text = ""; staValues[i].text = ""; staFills[i].transform.parent.gameObject.SetActive(false); continue; }
+                v = Mathf.Clamp(v, 0f, 100f);
+                staFills[i].transform.parent.gameObject.SetActive(true);
+                staNames[i].text = who;
+                staValues[i].text = Mathf.RoundToInt(v).ToString();
+                staFills[i].rectTransform.anchorMax = new Vector2(v / 100f, 1f);
+                if (staRestButtons[i] != null)
+                {
+                    bool show = level >= 5 && i - 1 < npcs.Count;
+                    if (staRestButtons[i].gameObject.activeSelf != show) staRestButtons[i].gameObject.SetActive(show);
+                    if (show)
+                    {
+                        // 이미 쉬는 중이면 "쉬는 중"으로 바뀌고 누를 수 없다
+                        bool resting = npcs[i - 1].resting || npcs[i - 1].forceRest;
+                        staRestButtons[i].interactable = !resting && npcs[i - 1].stamina <= 50f;
+                        Text bt = staRestButtons[i].GetComponentInChildren<Text>();
+                        if (bt != null) bt.text = resting ? "쉬는 중" : "휴식";
+                    }
+                }
+                staFills[i].color = v > 50f ? new Color(0.35f, 0.75f, 0.45f) : (v > 25f ? new Color(0.95f, 0.70f, 0.25f) : new Color(0.90f, 0.35f, 0.30f));
             }
         }
 
@@ -646,17 +776,18 @@ namespace SalonIntern
             }
         }
 
-        void AssignBed(Request r)
+        int FreeBeds()
         {
-            if (r.bed >= 0) return;
-            for (int i = 0; i < BedCount; i++)
-            {
-                if (bedOwner[i] != null) continue;
-                bedOwner[i] = r;
-                r.bed = i;
-                return;
-            }
-            r.bed = 0; // 둘 다 차 있으면 첫 샴푸대를 같이 쓴다(표시만)
+            int n = 0;
+            for (int i = 0; i < BedCount; i++) if (bedOwner[i] == null) n++;
+            return n;
+        }
+
+        // 자리가 없을 때 안내 문구 (시술석 의자 / 샴푸대)
+        string FullMessage(Request r, int idx, bool waiting)
+        {
+            string place = r.route != null && StepStation[r.route[idx]] == 0 ? "샴푸대가" : "시술석 의자가";
+            return place + " 모두 차 있어요! " + (waiting ? "자리가 날 때까지 기다려요" : "다른 요청을 먼저 해요");
         }
 
         // 지금 단계가 샴푸가 아니거나 요청이 사라졌으면 샴푸대를 비운다. 인턴이 감기는 손님은 그림으로 보여 준다.
@@ -666,7 +797,7 @@ namespace SalonIntern
             {
                 if (r.bed < 0) continue;
                 bool washing = r.route != null && r.routeIdx < r.route.Length && StepStation[r.route[r.routeIdx]] == 0;
-                if (washing) continue;
+                if (washing || r.ready) continue; // 모시러 오길 기다리는 손님은 샴푸대에 그대로 둔다
                 if (bedOwner[r.bed] == r) bedOwner[r.bed] = null;
                 r.bed = -1;
             }
@@ -730,7 +861,7 @@ namespace SalonIntern
             chairWaiter = null;
             playerTarget = StepPos(task, task.routeIdx);
             playerWalking = true;
-            Say("의자가 비었어요! " + StepNames[task.route[task.routeIdx]] + "하러 모셔요");
+            Say((StepStation[task.route[task.routeIdx]] == 0 ? "샴푸대가 비었어요! " : "의자가 비었어요! ") + StepNames[task.route[task.routeIdx]] + "하러 모셔요");
         }
 
         // ---------- 시술 중 대기 (염색약이 작용하는 시간 등) ----------
