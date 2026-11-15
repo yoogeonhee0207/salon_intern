@@ -2159,8 +2159,18 @@ namespace SalonIntern
         // ---------- 승급시험 ----------
 
         // 시험을 보려면 XP가 가득 차야 하고, 그 레벨의 시술을 정해진 횟수만큼 연습해야 한다
-        // 0: 견학 6종, 1: 샴푸, 2: 펌, 3: 염색, 4: 드라이, 5: 커트, 6(졸업): 시술 총 22회
-        static readonly int[] ExamNeed = { 6, 12, 4, 4, 4, 4, 22 };
+        // 승급시험 조건은 레벨이 오를수록 높아지고, 이전 레벨에서 해금된 시술까지 모두 포함한다 (연습 횟수는 계속 쌓인다)
+        // 줄: 시험을 보는 내 레벨(0은 견학, 6은 졸업), 칸: 샴푸 펌 염색 드라이 커트 탈색
+        static readonly int[][] ExamNeedByProc =
+        {
+            new[] { 0, 0, 0, 0, 0, 0 },
+            new[] { 18, 0, 0, 0, 0, 0 },
+            new[] { 28, 5, 0, 0, 0, 0 },
+            new[] { 34, 8, 6, 0, 0, 5 },
+            new[] { 39, 10, 10, 5, 0, 8 },
+            new[] { 44, 12, 14, 10, 5, 11 },
+            new[] { 50, 15, 18, 15, 10, 14 },
+        };
         readonly int[] practice = new int[6]; // 시술별로 끝낸 횟수
         int lastExamDay;
         bool graduated;
@@ -2170,28 +2180,29 @@ namespace SalonIntern
 
         void ExamProgress(out string text, out bool met)
         {
-            int have;
-            string what;
             if (level == 0)
             {
-                have = 0;
-                for (int i = 0; i < tourSeen.Length; i++) if (tourSeen[i]) have++;
-                what = "견학";
+                int tours = 0;
+                for (int i = 0; i < tourSeen.Length; i++) if (tourSeen[i]) tours++;
+                int tourNeed = LevelConfig.TestMode ? 1 : 6;
+                met = tours >= tourNeed;
+                text = "견학 " + Mathf.Min(tours, tourNeed) + "/" + tourNeed + (met ? " ✔" : "");
+                return;
             }
-            else if (level >= LevelConfig.MaxLevel)
+
+            met = true;
+            text = "";
+            int shown = 0;
+            int[] need = ExamNeedByProc[Mathf.Clamp(level, 0, ExamNeedByProc.Length - 1)];
+            for (int i = 0; i < need.Length; i++)
             {
-                have = 0;
-                foreach (int c in practice) have += c;
-                what = "시술 총";
+                if (need[i] <= 0) continue;
+                int n = LevelConfig.TestMode ? 1 : need[i];
+                bool ok = practice[i] >= n;
+                if (!ok) met = false;
+                text += (shown > 0 ? (shown % 2 == 0 ? "\n" : "   ") : "") + LevelConfig.ProcedureShortNames[i] + " " + Mathf.Min(practice[i], n) + "/" + n + (ok ? "✔" : "");
+                shown++;
             }
-            else
-            {
-                have = practice[level - 1];
-                what = LevelConfig.ProcedureShortNames[level - 1];
-            }
-            int need = LevelConfig.TestMode ? 1 : ExamNeed[level];
-            met = have >= need;
-            text = what + " " + Mathf.Min(have, need) + "/" + need + (met ? " ✔" : "");
         }
 
         bool CanTakeExamIgnoringDay()

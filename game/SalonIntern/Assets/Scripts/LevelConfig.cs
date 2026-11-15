@@ -63,12 +63,12 @@ namespace SalonIntern
         // 테스트용: true면 경험치와 시험 응시 조건을 최하로 낮춘다. 출시 전에 false로 바꿀 것.
         public const bool TestMode = false;
 
-        static readonly int[] NeedXp = { 8, 22, 28, 33, 34, 43, 44 };
+        static readonly int[] NeedXp = { 8, 18, 22, 26, 27, 34, 35 };
 
         public static int XpToNext(int level)
         {
             if (TestMode) return 1;
-            // 졸업까지 총 플레이 시간이 약 2시간(약 24일)이 되도록 맞춘 값. Lv.0은 견학만 해도 바로 Lv.1
+            // 졸업까지 총 플레이 시간이 약 2시간(약 24~26일)이 되도록 맞춘 값. Lv.0은 견학만 해도 바로 Lv.1
             return NeedXp[Mathf.Clamp(level, 0, NeedXp.Length - 1)];
         }
     }
